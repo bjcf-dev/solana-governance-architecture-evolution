@@ -1,21 +1,109 @@
-pub mod constants;
-pub mod error;
-pub mod instructions;
-pub mod state;
-
+// This is a program for a simple voting system on the Solana blockchain using the Anchor framework.
+// The program allows users to initialize a voting session and cast their votes. The program's ID is defined at the top, and the main logic for initializing the voting session is handled in the `initialize` function.
 use anchor_lang::prelude::*;
 
-pub use constants::*;
-pub use instructions::*;
-pub use state::*;
-
+// Declare the program ID for the voting program. 
+// This is a unique identifier for the program on the Solana blockchain. 
+// And it is used to ensure that the program is correctly identified when it is called by clients or other programs.
 declare_id!("DYDWxZMnCNYMKHAbhrQreo69kzCNpUrksAKNKyLDyPHY");
 
+// This module or macro contains the logic for initializing the voting session.
+// It is defined in a separate file for better organization. 
 #[program]
+// Now this mod`voting` contains the main functions that can be called by users of the program.
+// In this case, it includes the `initPoll` function, which is responsible for setting up a new voting session.
 pub mod voting {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        initialize::handler(ctx)
+    // This function is responsible for initializing a new voting session. 
+    // what it do is takes a context as an argument, 
+    // which contains the accounts and data needed to set up the voting session.
+    pub fn initPoll(ctx: Context<InitPoll>, poll_id: u64, start_time: u64, end_time: u64, poll_name: String, description: String) -> Result<()> {
+        let poll = &mut ctx.accounts.poll_account;
+        poll.poll_name = poll_name;
+        poll.description = description;
+        poll.voting_start = start_time;
+        poll.voting_end = end_time;
+        poll.option_index = 0;
+        Ok(())
     }
+}
+
+// account number 1
+#[derive(Accounts)]
+#[instruction(poll_id: u64)]
+pub struct InitPoll<'info> {
+    // This is the account of the user who is initializing the poll. 
+    // The `mut` keyword indicates that this account will be modified (e.g., to pay for the transaction).
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    // This account is the one that will hold the state of the voting session. 
+    // It is initialized and allocated space for the data defined in the `VotingSession` struct.
+    // seeds and bump represents pda (program derived address) which is a way to create deterministic addresses for accounts on the Solana blockchain.
+    #[account(init, 
+        payer = user, 
+        space = 8 + PollAccount::INIT_SPACE,
+        seeds = [b"poll".as_ref(), poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the voting session account based on a combination of a static string and the user's public key.
+        bump // The `bump` is a value used in conjunction with the seeds to ensure that the generated address is valid and does not collide with existing accounts on the blockchain.
+    )]
+    // This account will store the details of the voting session, such as the poll name, description, voting start and end times, and the option index.
+    pub poll_account: Account<'info, PollAccount>,
+    // This is a system program account that is required for creating new accounts on the Solana blockchain.
+    pub system_program: Program<'info, System>,
+}
+
+// account number 2
+#[derive(Accounts)]
+#[instruction(poll_id: u64, candidate: String)]
+pub struct InitializeCandidate<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(mut, 
+        seeds = [b"poll".as_ref(), poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the user's public key, the poll ID, and the candidate's name.
+        bump
+    )]
+    pub poll_account: Account<'info, PollAccount>,
+
+    #[account(init, 
+        payer = user, 
+        space = 8 + CandidateAccount::INIT_SPACE,
+        seeds = [poll_id.to_le_bytes().as_ref(), candidate.as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the poll ID, and the candidate's name.
+        bump
+    )]
+
+    pub candidate_account: Account<'info, CandidateAccount>,
+    pub system_program: Program<'info, System>,
+}
+
+// account number 3
+// This macro defines the structure of the accounts (data) 
+// that are required for the `initialize` function.
+#[account]
+// InitSpace is a macro that allocates space for the account data on the blockchain.
+#[derive(InitSpace)]
+// This struct represents the state of a voting session. It includes the name of the poll, a description, the start and end times for voting, and an index for the options available in the poll.
+pub struct PollAccount {
+    // This max_len is to define the maximun lenght for: 
+    #[max_len = (32)]
+    pub poll_name: String,
+    // the description of the poll, voting start and end times, and the option index that represents the choices available in the poll.
+    #[max_len = (280)]
+    pub description: String,
+    pub voting_start: u64,
+    pub voting_end: u64,
+    pub option_index: u64,
+}
+
+// account number 4
+#[account]
+#[derive(InitSpace)]
+
+// This struct represents a candidate in the voting session.
+// It includes the candidate's name and the number of votes they have received.
+pub struct CandidateAccount {
+    #[max_len = (32)]
+    pub candidate_name: String,
+    pub candidate_votes: u64,
 }
