@@ -18,13 +18,31 @@ pub mod voting {
     // This function is responsible for initializing a new voting session. 
     // what it do is takes a context as an argument, 
     // which contains the accounts and data needed to set up the voting session.
-    pub fn initPoll(ctx: Context<InitPoll>, poll_id: u64, start_time: u64, end_time: u64, poll_name: String, description: String) -> Result<()> {
+    pub fn init_poll(ctx: Context<InitPoll>, _poll_id: u64, start_time: u64, end_time: u64, poll_name: String, description: String) -> Result<()> {
         let poll = &mut ctx.accounts.poll_account;
         poll.poll_name = poll_name;
         poll.description = description;
         poll.voting_start = start_time;
         poll.voting_end = end_time;
         poll.option_index = 0;
+        Ok(())
+    }
+
+    // This function is responsible for initializing a candidate in the voting session.
+    pub fn initialize_candidate(
+        ctx: Context<InitializeCandidate>,  //  ctx is the context that contains the accounts and data needed to set up the candidate.
+        candidate_name: String,
+        _poll_id: u64, 
+    ) -> Result<()> {
+        let candidate = &mut ctx.accounts.candidate_account;
+        let poll = &mut ctx.accounts.poll_account;
+        candidate.candidate_name = candidate_name; // save the candidate name to the candidate account
+        candidate.candidate_votes = 0; // initialize the candidate's votes to 0
+        poll.option_index += 1; // increment 1 to the counter of the options in the poll account
+        Ok(())
+    }
+
+    pub fn vote(ctx: Context<Vote>,) -> Result<()> {
         Ok(())
     }
 }
@@ -47,7 +65,7 @@ pub struct InitPoll<'info> {
         seeds = [b"poll".as_ref(), poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the voting session account based on a combination of a static string and the user's public key.
         bump // The `bump` is a value used in conjunction with the seeds to ensure that the generated address is valid and does not collide with existing accounts on the blockchain.
     )]
-    // This account will store the details of the voting session, such as the poll name, description, voting start and end times, and the option index.
+    // This allocated account will store the details of the voting session, such as the poll name, description, voting start and end times, and the option index.
     pub poll_account: Account<'info, PollAccount>,
     // This is a system program account that is required for creating new accounts on the Solana blockchain.
     pub system_program: Program<'info, System>,
@@ -78,6 +96,29 @@ pub struct InitializeCandidate<'info> {
 }
 
 // account number 3
+#[derive(Accounts)]
+#[instruction(poll_id: u64, candidate: String)]
+pub struct Vote<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(mut, 
+        seeds = [b"poll".as_ref(), poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the user's public key, the poll ID, and the candidate's name.
+        bump
+    )]
+    pub poll_account: Account<'info, PollAccount>,
+
+    #[account(
+        mut, 
+        seeds = [poll_id.to_le_bytes().as_ref(), candidate.as_ref()], 
+        bump
+    )]
+
+    pub candidate_account: Account<'info, CandidateAccount>,
+}
+
+
+// account number 4
 // This macro defines the structure of the accounts (data) 
 // that are required for the `initialize` function.
 #[account]
@@ -86,24 +127,24 @@ pub struct InitializeCandidate<'info> {
 // This struct represents the state of a voting session. It includes the name of the poll, a description, the start and end times for voting, and an index for the options available in the poll.
 pub struct PollAccount {
     // This max_len is to define the maximun lenght for: 
-    #[max_len = (32)]
+    #[max_len(32)]
     pub poll_name: String,
     // the description of the poll, voting start and end times, and the option index that represents the choices available in the poll.
-    #[max_len = (280)]
+    #[max_len(280)]
     pub description: String,
     pub voting_start: u64,
     pub voting_end: u64,
     pub option_index: u64,
 }
 
-// account number 4
+// account number 5
 #[account]
 #[derive(InitSpace)]
 
 // This struct represents a candidate in the voting session.
 // It includes the candidate's name and the number of votes they have received.
 pub struct CandidateAccount {
-    #[max_len = (32)]
+    #[max_len(32)]
     pub candidate_name: String,
     pub candidate_votes: u64,
 }
