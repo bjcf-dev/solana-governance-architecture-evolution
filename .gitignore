@@ -6,3 +6,8 @@ node_modules
 test-ledger
 .yarn
 .surfpool
+
+#security
+*-keypair.json
+id.json
+.env
