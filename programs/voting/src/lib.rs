@@ -7,7 +7,7 @@ use anchor_lang::prelude::*;
 // And it is used to ensure that the program is correctly identified when it is called by clients or other programs.
 declare_id!("DYDWxZMnCNYMKHAbhrQreo69kzCNpUrksAKNKyLDyPHY");
 
-// This module or macro contains the logic for initializing the voting session.
+// This module/macro contains the logic for initializing the voting session.
 // It is defined in a separate file for better organization. 
 #[program]
 // Now this mod`voting` contains the main functions that can be called by users of the program.
@@ -42,7 +42,25 @@ pub mod voting {
         Ok(())
     }
 
-    pub fn vote(ctx: Context<Vote>,) -> Result<()> {
+
+    // This function is responsible for casting a vote for a candidate in the voting session.
+    pub fn vote(ctx: Context<Vote>, _poll_id: u64, _candidate: String) -> Result<()> {
+        let candidate_account = &mut ctx.accounts.candidate_account;
+
+        // Check if the voting period is active
+        let current_time = Clock::get()?.unix_timestamp as u64;
+        if current_time > (ctx.accounts.poll_account.voting_end as u64) {
+            return Err(ErrorCode::VotingEnded.into());
+        }
+        if current_time <= (ctx.accounts.poll_account.voting_start as u64) {
+            return Err(ErrorCode::VotingNotStarted.into());
+        }
+
+        candidate_account.candidate_votes += 1; // Increment the vote count for the candidate
+
+        ctx.accounts.vote_record.has_voted = true; // Mark the voter as having voted
+
+
         Ok(())
     }
 }
@@ -73,13 +91,13 @@ pub struct InitPoll<'info> {
 
 // account number 2
 #[derive(Accounts)]
-#[instruction(poll_id: u64, candidate: String)]
+#[instruction(candidate_name: String, _poll_id: u64)]
 pub struct InitializeCandidate<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(mut, 
-        seeds = [b"poll".as_ref(), poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the user's public key, the poll ID, and the candidate's name.
+        seeds = [b"poll".as_ref(), _poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the user's public key, the poll ID, and the candidate's name.
         bump
     )]
     pub poll_account: Account<'info, PollAccount>,
@@ -87,7 +105,7 @@ pub struct InitializeCandidate<'info> {
     #[account(init, 
         payer = user, 
         space = 8 + CandidateAccount::INIT_SPACE,
-        seeds = [poll_id.to_le_bytes().as_ref(), candidate.as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the poll ID, and the candidate's name.
+        seeds = [_poll_id.to_le_bytes().as_ref(), candidate_name.as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the poll ID, and the candidate's name.
         bump
     )]
 
@@ -97,26 +115,34 @@ pub struct InitializeCandidate<'info> {
 
 // account number 3
 #[derive(Accounts)]
-#[instruction(poll_id: u64, candidate: String)]
+#[instruction(_poll_id: u64, _candidate: String)] 
 pub struct Vote<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(mut, 
-        seeds = [b"poll".as_ref(), poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the candidate account based on a combination of a static string, the user's public key, the poll ID, and the candidate's name.
+        seeds = [b"poll".as_ref(), _poll_id.to_le_bytes().as_ref()],
         bump
     )]
     pub poll_account: Account<'info, PollAccount>,
 
     #[account(
         mut, 
-        seeds = [poll_id.to_le_bytes().as_ref(), candidate.as_ref()], 
+        seeds = [_poll_id.to_le_bytes().as_ref(), _candidate.as_ref()],
         bump
     )]
-
     pub candidate_account: Account<'info, CandidateAccount>,
-}
 
+    #[account(init, 
+        payer = user, 
+        space = 8 + VoteRecord::INIT_SPACE,
+        seeds = [b"voter".as_ref(), _poll_id.to_le_bytes().as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub vote_record: Account<'info, VoteRecord>,
+
+    pub system_program: Program<'info, System>,
+}
 
 // account number 4
 // This macro defines the structure of the accounts (data) 
@@ -147,4 +173,23 @@ pub struct CandidateAccount {
     #[max_len(32)]
     pub candidate_name: String,
     pub candidate_votes: u64,
+}
+
+// account number 6
+#[account]
+#[derive(InitSpace)]
+pub struct VoteRecord {
+    pub has_voted: bool,
+}
+
+// This module/Macro defines custom error codes for the voting program.
+#[error_code]
+pub enum ErrorCode {
+    // This error code is returned when a user tries to vote outside of the active voting period
+    #[msg("Voting has not started yet.")]
+    VotingNotStarted,
+    #[msg("Voting has ended.")]
+    VotingEnded,
+    #[msg("Voting period is inactive.")]
+    VotingPeriodInactive,
 }
