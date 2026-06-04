@@ -1,17 +1,9 @@
-// This is a program for a simple voting system on the Solana blockchain using the Anchor framework.
-// The program allows users to initialize a voting session and cast their votes. The program's ID is defined at the top, and the main logic for initializing the voting session is handled in the `initialize` function.
 use anchor_lang::prelude::*;
+use anchor_spl::token::{TokenAccount, Token, Mint};
 
-// Declare the program ID for the voting program. 
-// This is a unique identifier for the program on the Solana blockchain. 
-// And it is used to ensure that the program is correctly identified when it is called by clients or other programs.
 declare_id!("DYDWxZMnCNYMKHAbhrQreo69kzCNpUrksAKNKyLDyPHY");
 
-// This module/macro contains the logic for initializing the voting session.
-// It is defined in a separate file for better organization. 
 #[program]
-// Now this mod`voting` contains the main functions that can be called by users of the program.
-// In this case, it includes the `initPoll` function, which is responsible for setting up a new voting session.
 pub mod voting {
     use super::*;
 
@@ -42,10 +34,9 @@ pub mod voting {
         Ok(())
     }
 
-
-    // This function is responsible for casting a vote for a candidate in the voting session.
+    // fn vote is responsible for casting a vote for a candidate in the voting session.
     pub fn vote(ctx: Context<Vote>, _poll_id: u64, _candidate: String) -> Result<()> {
-        let candidate_account = &mut ctx.accounts.candidate_account;
+        let candidate_account= &mut ctx.accounts.candidate_account;
 
         // Check if the voting period is active
         let current_time = Clock::get()?.unix_timestamp as u64;
@@ -56,36 +47,44 @@ pub mod voting {
             return Err(ErrorCode::VotingNotStarted.into());
         }
 
-        candidate_account.candidate_votes += 1; // Increment the vote count for the candidate
+        // first we extract how many tokens the voter holds in their wallet.
+        let vote_weight: u64 = ctx.accounts.user_token_account.amount;
 
-        ctx.accounts.vote_record.has_voted = true; // Mark the voter as having voted
+        // anti-spam mechanism_ if the voter does not hold any tokens, they cannot vote.
+        require!(vote_weight > 0, ErrorCode::NoTokensOwned);
+
+        // now we add the exact number of tokens as a weight to the candidate's vote count.
+        candidate_account.candidate_votes += vote_weight;
+
+
+        //candidate_account.candidate_votes += 1; // Increment the vote count for the candidate
+
+        //ctx.accounts.vote_record.has_voted = true; // Mark the voter as having voted
 
 
         Ok(())
     }
 }
 
+
+
+
 // account number 1
 #[derive(Accounts)]
 #[instruction(poll_id: u64)]
 pub struct InitPoll<'info> {
-    // This is the account of the user who is initializing the poll. 
-    // The `mut` keyword indicates that this account will be modified (e.g., to pay for the transaction).
     #[account(mut)]
     pub user: Signer<'info>,
 
-    // This account is the one that will hold the state of the voting session. 
-    // It is initialized and allocated space for the data defined in the `VotingSession` struct.
-    // seeds and bump represents pda (program derived address) which is a way to create deterministic addresses for accounts on the Solana blockchain.
     #[account(init, 
         payer = user, 
         space = 8 + PollAccount::INIT_SPACE,
         seeds = [b"poll".as_ref(), poll_id.to_le_bytes().as_ref()], // This seeds is used to create a unique address for the voting session account based on a combination of a static string and the user's public key.
         bump // The `bump` is a value used in conjunction with the seeds to ensure that the generated address is valid and does not collide with existing accounts on the blockchain.
     )]
-    // This allocated account will store the details of the voting session, such as the poll name, description, voting start and end times, and the option index.
+
     pub poll_account: Account<'info, PollAccount>,
-    // This is a system program account that is required for creating new accounts on the Solana blockchain.
+
     pub system_program: Program<'info, System>,
 }
 
@@ -93,6 +92,7 @@ pub struct InitPoll<'info> {
 #[derive(Accounts)]
 #[instruction(candidate_name: String, _poll_id: u64)]
 pub struct InitializeCandidate<'info> {
+    
     #[account(mut)]
     pub user: Signer<'info>,
 
@@ -116,7 +116,9 @@ pub struct InitializeCandidate<'info> {
 // account number 3
 #[derive(Accounts)]
 #[instruction(_poll_id: u64, _candidate: String)] 
+
 pub struct Vote<'info> {
+
     #[account(mut)]
     pub user: Signer<'info>,
 
@@ -133,29 +135,37 @@ pub struct Vote<'info> {
     )]
     pub candidate_account: Account<'info, CandidateAccount>,
 
-    #[account(init, 
-        payer = user, 
-        space = 8 + VoteRecord::INIT_SPACE,
-        seeds = [b"voter".as_ref(), _poll_id.to_le_bytes().as_ref(), user.key().as_ref()],
-        bump
+    #[account(
+        constraint = user_token_account.owner == user.key() @ ErrorCode::NotTokenOwner, 
+        constraint = user_token_account.mint == governance_token_mint.key() @ ErrorCode::InvalidMint,
     )]
-    pub vote_record: Account<'info, VoteRecord>,
 
+    // adding a new account to keep track of whether a user has voted or not.
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    // adding the governance token mint account to the context of the `vote` function.
+    // This account is used to verify that the voter holds the required governance tokens
+    // to participate in the voting process.
+    #[account()]
+    pub governance_token_mint: Account<'info, Mint>,
+    // adding the token program to the context of the `vote` function.
+    // This allows the program to interact with the SPL Token program, 
+    // which is necessary for checking token balances and transferring tokens if needed.
+    
+    pub token_program: Program<'info, Token>,
+    // adding the system program to the context of the `vote` function,
+    // which is necessary for creating new accounts (like the vote record account)
+    // and handling other system-level operations on the Solana blockchain.
     pub system_program: Program<'info, System>,
 }
 
 // account number 4
-// This macro defines the structure of the accounts (data) 
-// that are required for the `initialize` function.
 #[account]
-// InitSpace is a macro that allocates space for the account data on the blockchain.
 #[derive(InitSpace)]
-// This struct represents the state of a voting session. It includes the name of the poll, a description, the start and end times for voting, and an index for the options available in the poll.
 pub struct PollAccount {
-    // This max_len is to define the maximun lenght for: 
+    
     #[max_len(32)]
     pub poll_name: String,
-    // the description of the poll, voting start and end times, and the option index that represents the choices available in the poll.
     #[max_len(280)]
     pub description: String,
     pub voting_start: u64,
@@ -167,8 +177,6 @@ pub struct PollAccount {
 #[account]
 #[derive(InitSpace)]
 
-// This struct represents a candidate in the voting session.
-// It includes the candidate's name and the number of votes they have received.
 pub struct CandidateAccount {
     #[max_len(32)]
     pub candidate_name: String,
@@ -185,11 +193,17 @@ pub struct VoteRecord {
 // This module/Macro defines custom error codes for the voting program.
 #[error_code]
 pub enum ErrorCode {
-    // This error code is returned when a user tries to vote outside of the active voting period
     #[msg("Voting has not started yet.")]
     VotingNotStarted,
     #[msg("Voting has ended.")]
     VotingEnded,
     #[msg("Voting period is inactive.")]
     VotingPeriodInactive,
+    #[msg("The wallet does not own the presented token account")] // ◄— New msg error
+    NotTokenOwner,
+    #[msg("The presented token does not belong to the official governance currency..")] // ◄— NUEVA
+    InvalidMint,
+    #[msg("You do not have enough tokens to cast a vote..")] // ◄— New msg error
+    NoTokensOwned,
 }
+
