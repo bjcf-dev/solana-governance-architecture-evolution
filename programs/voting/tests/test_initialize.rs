@@ -80,12 +80,15 @@ fn test_secure_voting_flow() {
     ).unwrap();
 
     // 3. Deposit 150 Tokens into the user's account (This will be their voting weight)
+    // Creating an explicitly typed empty slice completely satisfies rust-analyzer's type inference
+    let signer_pubkeys: &[&Pubkey] = &[];
+
     let mint_to_ix = spl_token::instruction::mint_to(
         &spl_token::ID,
         &mint_pubkey,
         &user_token_pubkey,
         &payer.pubkey(),
-        &[],
+        signer_pubkeys,
         150, 
     ).unwrap();
 
@@ -98,7 +101,12 @@ fn test_secure_voting_flow() {
     );
 
     let (candidate_pda, _) = Pubkey::find_program_address(
-        [&poll_id.to_le_bytes()[..], candidate_name.as_bytes()].as_slice(),
+        [b"poll".as_ref(), &poll_id.to_le_bytes()[..], candidate_name.as_bytes()].as_slice(),
+        &program_id,
+    );
+
+    let (vote_record_pda, _) = Pubkey::find_program_address(
+        [b"voted".as_ref(), poll_pda.as_ref(), payer.pubkey().as_ref()].as_slice(),
         &program_id,
     );
 
@@ -146,6 +154,7 @@ fn test_secure_voting_flow() {
             user: payer.pubkey(),
             poll_account: poll_pda,
             candidate_account: candidate_pda,
+            vote_record: vote_record_pda,              // NEW PDA: Anti-double-voting shield account
             user_token_account: user_token_pubkey,      // NEW ACCOUNT: The voter's token account
             governance_token_mint: mint_pubkey,         // NEW ACCOUNT: The governance token mint account, used to verify the voter's token holdings
             token_program: spl_token::ID,               // NEW ACCOUNT: The SPL Token program, needed to interact with token accounts
