@@ -1,0 +1,540 @@
+name: Solana Voting E2E Tests
+version: 1.0
+
+environment:
+  solana_endpoint: "http://localhost:8899"  # Local devnet endpoint
+  timeout: 30000  # 30 seconds timeout
+  max_retries: 3
+
+scenarios:
+  - id: a1-complete-cycle
+    name: Complete Voting Cycle
+    description: Test the complete voting lifecycle from initialization to withdrawal
+    steps:
+      - name: Initialize Poll
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "init_poll"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 1
+            start_time: 10
+            end_time: 2000000000
+            poll_name: "Test Poll"
+            description: "Test poll for E2E testing"
+
+      - name: Initialize Candidate A
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "initialize_candidate"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 1
+            candidate_name: "Candidate A"
+
+      - name: Initialize Candidate B
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "initialize_candidate"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate B"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 1
+            candidate_name: "Candidate B"
+
+      - name: Voter 1 Votes for Candidate A
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "vote"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+            - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_1"]}
+            - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_1"]}
+            - {name: "user", type: "wallet", address: "VOTER_1_PUBLIC_KEY"}
+            - {name: "user_token_account", type: "token_account", owner: "VOTER_1_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+            - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+            - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+            - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+          data:
+            poll_id: 1
+            candidate_name: "Candidate A"
+            amount: 150000  # 150 tokens (assuming 6 decimals)
+
+      - name: Voter 2 Votes for Candidate B
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "vote"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate B"]}
+            - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_2"]}
+            - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_2"]}
+            - {name: "user", type: "wallet", address: "VOTER_2_PUBLIC_KEY"}
+            - {name: "user_token_account", type: "token_account", owner: "VOTER_2_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+            - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+            - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+            - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+          data:
+            poll_id: 1
+            candidate_name: "Candidate B"
+            amount: 50000  # 50 tokens (assuming 6 decimals)
+
+      - name: Advance Clock Beyond Voting End
+        action: rpc_call
+        method: setSysvar
+        params:
+          sysvar: "Clock"
+          data:
+            unix_timestamp: 3000000000  # After voting end time
+
+      - name: Voter 1 Withdraws Tokens
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "withdraw_tokens"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_1"]}
+            - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_1"]}
+            - {name: "user_token_account", type: "token_account", owner: "VOTER_1_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+            - {name: "user", type: "wallet", address: "VOTER_1_PUBLIC_KEY"}
+            - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+          data:
+            poll_id: 1
+
+      - name: Voter 2 Withdraws Tokens
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "withdraw_tokens"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_2"]}
+            - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_2"]}
+            - {name: "user_token_account", type: "token_account", owner: "VOTER_2_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+            - {name: "user", type: "wallet", address: "VOTER_2_PUBLIC_KEY"}
+            - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+          data:
+            poll_id: 1
+
+      - name: Validate Final State
+        action: validate
+        checks:
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "POLL_PDA_ADDRESS"
+            assertion: "result.data.total_tokens_locked == 0"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "CANDIDATE_A_PDA_ADDRESS"
+            assertion: "result.data.candidate_votes == 0"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "CANDIDATE_B_PDA_ADDRESS"
+            assertion: "result.data.candidate_votes == 0"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_1_TOKEN_ACCOUNT_ADDRESS"
+            assertion: "result.data.amount == 150000"  # Voter 1 gets back 150 tokens
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_2_TOKEN_ACCOUNT_ADDRESS"
+            assertion: "result.data.amount == 50000"   # Voter 2 gets back 50 tokens
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_1_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result == null"  # Vote record should be closed
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_1_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result == null"  # Escrow vault should be closed
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_2_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result == null"  # Vote record should be closed
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_2_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result == null"  # Escrow vault should be closed
+
+  - id: a2-concurrent-voting
+    name: Concurrent Voting Race Condition
+    description: Test simultaneous voting transactions to ensure no race conditions
+    steps:
+      - name: Initialize Poll
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "init_poll"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 2
+            start_time: 10
+            end_time: 2000000000
+            poll_name: "Concurrent Poll"
+            description: "Poll for concurrent voting test"
+
+      - name: Initialize Candidate
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "initialize_candidate"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 2
+            candidate_name: "Candidate A"
+
+      - name: Simultaneous Voting by Two Voters
+        action: concurrent
+        parallel:
+          - name: Voter 1 Votes
+            action: rpc_call
+            method: sendTransaction
+            params:
+              program_id: "VOTING_PROGRAM_ID"
+              instruction: "vote"
+              accounts:
+                - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+                - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+                - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_1"]}
+                - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_1"]}
+                - {name: "user", type: "wallet", address: "VOTER_1_PUBLIC_KEY"}
+                - {name: "user_token_account", type: "token_account", owner: "VOTER_1_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+                - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+                - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+                - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+              data:
+                poll_id: 2
+                candidate_name: "Candidate A"
+                amount: 100000
+
+          - name: Voter 2 Votes
+            action: rpc_call
+            method: sendTransaction
+            params:
+              program_id: "VOTING_PROGRAM_ID"
+              instruction: "vote"
+              accounts:
+                - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+                - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+                - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_2"]}
+                - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_2"]}
+                - {name: "user", type: "wallet", address: "VOTER_2_PUBLIC_KEY"}
+                - {name: "user_token_account", type: "token_account", owner: "VOTER_2_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+                - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+                - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+                - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+              data:
+                poll_id: 2
+                candidate_name: "Candidate A"
+                amount: 75000
+
+      - name: Validate Final State
+        action: validate
+        checks:
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "POLL_PDA_ADDRESS"
+            assertion: "result.data.total_tokens_locked == 175000"  # 100k + 75k
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "CANDIDATE_A_PDA_ADDRESS"
+            assertion: "result.data.candidate_votes == 175000"  # 100k + 75k
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_1_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result.data.amount == 100000"  # Voter 1's tokens locked
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_2_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result.data.amount == 75000"   # Voter 2's tokens locked
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_1_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result.data.has_voted == true"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_2_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result.data.has_voted == true"
+
+  - id: a3-economic-invariance
+    name: Economic Invariance Validation
+    description: Verify sum of candidate votes equals total tokens locked
+    steps:
+      - name: Initialize Poll
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "init_poll"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 3
+            start_time: 10
+            end_time: 2000000000
+            poll_name: "Economic Invariance Poll"
+            description: "Poll for economic invariance test"
+
+      - name: Initialize Multiple Candidates
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "initialize_candidate"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 3
+            candidate_name: "Candidate A"
+
+      - name: Initialize Candidate B
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "initialize_candidate"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate B"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 3
+            candidate_name: "Candidate B"
+
+      - name: Initialize Candidate C
+        action: rpc_call
+        method: sendTransaction
+        params:
+          program_id: "VOTING_PROGRAM_ID"
+          instruction: "initialize_candidate"
+          accounts:
+            - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+            - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate C"]}
+            - {name: "payer", type: "wallet"}
+          data:
+            poll_id: 3
+            candidate_name: "Candidate C"
+
+      - name: Multiple Voters Vote
+        action: concurrent
+        parallel:
+          - name: Voter 1 Votes for A
+            action: rpc_call
+            method: sendTransaction
+            params:
+              program_id: "VOTING_PROGRAM_ID"
+              instruction: "vote"
+              accounts:
+                - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+                - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+                - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_1"]}
+                - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_1"]}
+                - {name: "user", type: "wallet", address: "VOTER_1_PUBLIC_KEY"}
+                - {name: "user_token_account", type: "token_account", owner: "VOTER_1_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+                - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+                - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+                - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+              data:
+                poll_id: 3
+                candidate_name: "Candidate A"
+                amount: 50000
+
+          - name: Voter 2 Votes for B
+            action: rpc_call
+            method: sendTransaction
+            params:
+              program_id: "VOTING_PROGRAM_ID"
+              instruction: "vote"
+              accounts:
+                - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+                - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate B"]}
+                - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_2"]}
+                - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_2"]}
+                - {name: "user", type: "wallet", address: "VOTER_2_PUBLIC_KEY"}
+                - {name: "user_token_account", type: "token_account", owner: "VOTER_2_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+                - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+                - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+                - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+              data:
+                poll_id: 3
+                candidate_name: "Candidate B"
+                amount: 75000
+
+          - name: Voter 3 Votes for C
+            action: rpc_call
+            method: sendTransaction
+            params:
+              program_id: "VOTING_PROGRAM_ID"
+              instruction: "vote"
+              accounts:
+                - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+                - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate C"]}
+                - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_3"]}
+                - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_3"]}
+                - {name: "user", type: "wallet", address: "VOTER_3_PUBLIC_KEY"}
+                - {name: "user_token_account", type: "token_account", owner: "VOTER_3_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+                - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+                - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+                - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+              data:
+                poll_id: 3
+                candidate_name: "Candidate C"
+                amount: 125000
+
+          - name: Voter 4 Votes for A
+            action: rpc_call
+            method: sendTransaction
+            params:
+              program_id: "VOTING_PROGRAM_ID"
+              instruction: "vote"
+              accounts:
+                - {name: "poll_account", type: "pda", seeds: ["poll", "poll_id"]}
+                - {name: "candidate_account", type: "pda", seeds: ["poll", "poll_id", "Candidate A"]}
+                - {name: "vote_record", type: "pda", seeds: ["voted", "poll_id", "voter_4"]}
+                - {name: "escrow_vault", type: "pda", seeds: ["escrow", "poll_id", "voter_4"]}
+                - {name: "user", type: "wallet", address: "VOTER_4_PUBLIC_KEY"}
+                - {name: "user_token_account", type: "token_account", owner: "VOTER_4_PUBLIC_KEY", mint: "GOVERNANCE_MINT"}
+                - {name: "governance_token_mint", type: "mint", address: "GOVERNANCE_MINT"}
+                - {name: "token_program", type: "program", address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+                - {name: "system_program", type: "program", address: "11111111111111111111111111111111"}
+              data:
+                poll_id: 3
+                candidate_name: "Candidate A"
+                amount: 25000
+
+      - name: Validate Economic Invariance
+        action: validate
+        checks:
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "POLL_PDA_ADDRESS"
+            assertion: "result.data.total_tokens_locked == 275000"  # 50k + 75k + 125k + 25k
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "CANDIDATE_A_PDA_ADDRESS"
+            assertion: "result.data.candidate_votes == 75000"  # 50k + 25k
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "CANDIDATE_B_PDA_ADDRESS"
+            assertion: "result.data.candidate_votes == 75000"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "CANDIDATE_C_PDA_ADDRESS"
+            assertion: "result.data.candidate_votes == 125000"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "POLL_PDA_ADDRESS"
+            assertion: "result.data.total_tokens_locked == (result.data.candidate_votes + result.data.candidate_votes + result.data.candidate_votes)"  # Sum of all candidate votes equals total locked
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_1_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result.data.amount == 50000"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_2_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result.data.amount == 75000"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_3_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result.data.amount == 125000"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_4_ESCROW_VAULT_PDA_ADDRESS"
+            assertion: "result.data.amount == 25000"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_1_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result.data.has_voted == true"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_2_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result.data.has_voted == true"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_3_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result.data.has_voted == true"
+          - type: rpc_query
+            method: getAccountInfo
+            params:
+              pubkey: "VOTER_4_VOTE_RECORD_PDA_ADDRESS"
+            assertion: "result.data.has_voted == true"
+
+# Configuration for TestSprite integration
+integration:
+  type: solana
+  rpc_endpoint: "http://localhost:8899"
+  timeout: 60000
+  max_retries: 5
+  retry_delay: 1000
+  concurrent_requests: 10
+  required_accounts:
+    - "VOTING_PROGRAM_ID"
+    - "GOVERNANCE_MINT"
+    - "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"  # SPL Token Program
+    - "11111111111111111111111111111111"  # System Program
+
+# Test metadata
+metadata:
+  author: "Solana Governance Team"
+  created: "2026-06-14"
+  version: "1.0"
+  project: "Solana Governance Architecture Evolution"
+  branch: "architecture/v2-token-gated"

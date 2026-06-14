@@ -6,8 +6,21 @@ node_modules
 test-ledger
 .yarn
 .surfpool
+.GEMINI.md
+.agent
+.claude
+.codex
+.gemini
+.github
+.opencode
+.qwen
 
-#security
+# Cambiado de .openspec a openspec/ para que coincida con tu carpeta real
+openspec/
+# Añadido para ignorar los logs pesados del validador local de Solana
+validator.log
+
+# security
 *-keypair.json
 id.json
 .env
