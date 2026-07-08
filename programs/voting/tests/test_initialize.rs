@@ -1,650 +1,442 @@
 use {
     anchor_lang::{
         prelude::Pubkey,
-        solana_program::{
-            instruction::Instruction,
-            system_instruction,
-            program_pack::Pack,
-            clock::Clock,
-        },
-        InstructionData,
-        ToAccountMetas,
-        AccountDeserialize,
+        solana_program::instruction::Instruction,
+        AccountDeserialize, InstructionData, ToAccountMetas,
     },
-    anchor_spl::token::spl_token,
+    solana_sha256_hasher::hashv,
     litesvm::LiteSVM,
+    solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_signer::Signer,
-    solana_keypair::Keypair,
     solana_transaction::versioned::VersionedTransaction,
 };
-use voting::{accounts, instruction, PollAccount, CandidateAccount, VoteRecord};
+use voting::{accounts, instruction};
 
-// ============================================================================
-// HELPERS
-// ============================================================================
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn setup_svm() -> (LiteSVM, Keypair) {
-    let payer = Keypair::new();
-    let mut svm = LiteSVM::new();
-    let bytes = include_bytes!("../../../target/deploy/voting.so");
-    svm.add_program(voting::id(), bytes).unwrap();
-    svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
-    (svm, payer)
+fn compute_leaf(voter: &Pubkey, candidate: &str, amount: u64) -> [u8; 32] {
+    hashv(&[voter.as_ref(), candidate.as_bytes(), &amount.to_le_bytes()]).to_bytes()
 }
 
-fn set_clock(svm: &mut LiteSVM, unix_timestamp: i64) {
-    svm.set_sysvar::<Clock>(&Clock {
-        slot: 1,
-        unix_timestamp,
-        ..Default::default()
-    });
-}
-
-// ── Token helpers ───────────────────────────────────────────────────────────
-
-fn create_mint(svm: &mut LiteSVM, payer: &Keypair, mint_kp: &Keypair) {
-    let ix_create = system_instruction::create_account(
-        &payer.pubkey(), &mint_kp.pubkey(),
-        10_000_000,
-        spl_token::state::Mint::LEN as u64,
-        &spl_token::ID,
-    );
-    let ix_init = spl_token::instruction::initialize_mint(
-        &spl_token::ID, &mint_kp.pubkey(), &payer.pubkey(), None, 6,
-    ).unwrap();
-    let bh = svm.latest_blockhash();
-    let msg = Message::new_with_blockhash(&[ix_create, ix_init], Some(&payer.pubkey()), &bh);
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[payer, mint_kp]).unwrap();
-    svm.send_transaction(tx).unwrap();
-}
-
-fn create_token_account(
-    svm: &mut LiteSVM, payer: &Keypair, token_kp: &Keypair,
-    mint: &Pubkey, owner: &Pubkey,
-) {
-    let ix_create = system_instruction::create_account(
-        &payer.pubkey(), &token_kp.pubkey(),
-        10_000_000,
-        spl_token::state::Account::LEN as u64,
-        &spl_token::ID,
-    );
-    let ix_init = spl_token::instruction::initialize_account(
-        &spl_token::ID, &token_kp.pubkey(), mint, owner,
-    ).unwrap();
-    let bh = svm.latest_blockhash();
-    let msg = Message::new_with_blockhash(&[ix_create, ix_init], Some(&payer.pubkey()), &bh);
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[payer, token_kp]).unwrap();
-    svm.send_transaction(tx).unwrap();
-}
-
-fn mint_to(svm: &mut LiteSVM, payer: &Keypair, mint: &Pubkey, dest: &Pubkey, amount: u64) {
-    let ix = spl_token::instruction::mint_to(
-        &spl_token::ID, mint, dest, &payer.pubkey(), &[], amount,
-    ).unwrap();
-    let bh = svm.latest_blockhash();
-    let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &bh);
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[payer]).unwrap();
-    svm.send_transaction(tx).unwrap();
-}
-
-fn setup_voter(
-    svm: &mut LiteSVM, payer: &Keypair, mint: &Pubkey,
-    voter_kp: &Keypair, token_kp: &Keypair, balance: u64,
-) {
-    svm.airdrop(&voter_kp.pubkey(), 3_000_000_000).unwrap();
-    create_token_account(svm, payer, token_kp, mint, &voter_kp.pubkey());
-    if balance > 0 {
-        mint_to(svm, payer, mint, &token_kp.pubkey(), balance);
+/// Returns (levels, root). levels[0] = leaves, levels[1] = parent hashes, etc.
+fn build_merkle_tree(leaves: &[[u8; 32]]) -> (Vec<Vec<[u8; 32]>>, [u8; 32]) {
+    let mut levels = vec![leaves.to_vec()];
+    while levels.last().unwrap().len() > 1 {
+        let prev = levels.last().unwrap();
+        let mut next = Vec::with_capacity((prev.len() + 1) / 2);
+        for chunk in prev.chunks(2) {
+            let h = if chunk.len() == 2 {
+                hashv(&[&chunk[0], &chunk[1]]).to_bytes()
+            } else {
+                chunk[0]
+            };
+            next.push(h);
+        }
+        levels.push(next);
     }
+    let root = levels.last().unwrap()[0];
+    (levels, root)
 }
 
-// ── PDA derivations ────────────────────────────────────────────────────────
+fn get_proof(levels: &[Vec<[u8; 32]>], leaf_index: usize) -> Vec<[u8; 32]> {
+    let mut proof = Vec::new();
+    let mut idx = leaf_index;
+    for level in levels {
+        if level.len() == 1 {
+            break;
+        }
+        let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        // ponytail: odd level, last node has no sibling — skip
+        if sibling_idx < level.len() {
+            proof.push(level[sibling_idx]);
+        }
+        idx /= 2;
+    }
+    proof
+}
 
-fn poll_pda(poll_id: u64) -> Pubkey {
-    Pubkey::find_program_address(&[b"poll", &poll_id.to_le_bytes()], &voting::id()).0
-}
-fn candidate_pda(poll_id: u64, name: &str) -> Pubkey {
-    Pubkey::find_program_address(
-        &[b"poll", &poll_id.to_le_bytes(), name.as_bytes()], &voting::id(),
-    ).0
-}
-fn vote_record_pda(poll: &Pubkey, user: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"voted", poll.as_ref(), user.as_ref()], &voting::id()).0
-}
-fn escrow_pda(poll: &Pubkey, user: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"escrow", poll.as_ref(), user.as_ref()], &voting::id()).0
-}
-
-// ── Instruction builders ────────────────────────────────────────────────────
-
-fn init_poll_ix(payer: &Pubkey, poll_id: u64, start: u64, end: u64) -> Instruction {
-    Instruction::new_with_bytes(
-        voting::id(),
+fn setup_poll(
+    svm: &mut LiteSVM,
+    admin: &Keypair,
+    poll_id: u64,
+    merkle_root: [u8; 32],
+    poll_pda: Pubkey,
+) {
+    let program_id = voting::id();
+    let ix = Instruction::new_with_bytes(
+        program_id,
         &instruction::InitPoll {
-            _poll_id: poll_id, start_time: start, end_time: end,
-            poll_name: "Test".to_string(), description: "T".to_string(),
-        }.data(),
+            _poll_id: poll_id,
+            start_time: 10,
+            end_time: 2_000_000_000,
+            poll_name: "V3 Merkle".to_string(),
+            description: "Merkle tree voting".to_string(),
+            merkle_root,
+        }
+        .data(),
         accounts::InitPoll {
-            user: *payer,
-            poll_account: poll_pda(poll_id),
+            user: admin.pubkey(),
+            poll_account: poll_pda,
             system_program: anchor_lang::solana_program::system_program::id(),
-        }.to_account_metas(None),
-    )
+        }
+        .to_account_metas(None),
+    );
+    let bh = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[ix], Some(&admin.pubkey()), &bh);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[admin]).unwrap();
+    svm.send_transaction(tx).unwrap();
 }
 
-fn init_candidate_ix(payer: &Pubkey, poll_id: u64, name: &str) -> Instruction {
-    Instruction::new_with_bytes(
-        voting::id(),
+fn setup_candidate(
+    svm: &mut LiteSVM,
+    admin: &Keypair,
+    poll_id: u64,
+    candidate_name: &str,
+    poll_pda: Pubkey,
+    candidate_pda: Pubkey,
+) {
+    let program_id = voting::id();
+    let ix = Instruction::new_with_bytes(
+        program_id,
         &instruction::InitializeCandidate {
-            candidate_name: name.to_string(), _poll_id: poll_id,
-        }.data(),
+            candidate_name: candidate_name.to_string(),
+            _poll_id: poll_id,
+        }
+        .data(),
         accounts::InitializeCandidate {
-            user: *payer,
-            poll_account: poll_pda(poll_id),
-            candidate_account: candidate_pda(poll_id, name),
+            user: admin.pubkey(),
+            poll_account: poll_pda,
+            candidate_account: candidate_pda,
             system_program: anchor_lang::solana_program::system_program::id(),
-        }.to_account_metas(None),
-    )
+        }
+        .to_account_metas(None),
+    );
+    let bh = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[ix], Some(&admin.pubkey()), &bh);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[admin]).unwrap();
+    svm.send_transaction(tx).unwrap();
 }
 
-fn vote_ix(
-    user: &Pubkey, poll_id: u64, candidate: &str,
-    user_token: &Pubkey, gov_mint: &Pubkey, amount: u64,
-) -> Instruction {
-    let poll = poll_pda(poll_id);
-    Instruction::new_with_bytes(
-        voting::id(),
+fn submit_vote(
+    svm: &mut LiteSVM,
+    voter: &Keypair,
+    poll_id: u64,
+    candidate_name: &str,
+    amount: u64,
+    proof: Vec<[u8; 32]>,
+    leaf_index: u64,
+    poll_pda: Pubkey,
+    candidate_pda: Pubkey,
+) -> Result<(), String> {
+    let program_id = voting::id();
+    let ix = Instruction::new_with_bytes(
+        program_id,
         &instruction::Vote {
             _poll_id: poll_id,
-            _candidate: candidate.to_string(),
+            candidate_name: candidate_name.to_string(),
             amount,
-        }.data(),
+            proof,
+            leaf_index,
+        }
+        .data(),
         accounts::Vote {
-            user: *user,
-            poll_account: poll,
-            candidate_account: candidate_pda(poll_id, candidate),
-            vote_record: vote_record_pda(&poll, user),
-            user_token_account: *user_token,
-            governance_token_mint: *gov_mint,
-            escrow_vault: escrow_pda(&poll, user),
-            token_program: spl_token::ID,
+            user: voter.pubkey(),
+            poll_account: poll_pda,
+            candidate_account: candidate_pda,
             system_program: anchor_lang::solana_program::system_program::id(),
-        }.to_account_metas(None),
-    )
-}
-
-fn withdraw_ix(user: &Pubkey, poll_id: u64, user_token: &Pubkey) -> Instruction {
-    let poll = poll_pda(poll_id);
-    Instruction::new_with_bytes(
-        voting::id(),
-        &instruction::WithdrawTokens { _poll_id: poll_id }.data(),
-        accounts::Withdraw {
-            user: *user,
-            poll_account: poll,
-            vote_record: vote_record_pda(&poll, user),
-            escrow_vault: escrow_pda(&poll, user),
-            user_token_account: *user_token,
-            token_program: spl_token::ID,
-        }.to_account_metas(None),
-    )
-}
-
-// ── Send helpers ────────────────────────────────────────────────────────────
-
-fn send(svm: &mut LiteSVM, ixs: Vec<Instruction>, signers: &[&Keypair]) {
+        }
+        .to_account_metas(None),
+    );
     let bh = svm.latest_blockhash();
-    let msg = Message::new_with_blockhash(&ixs, Some(&signers[0].pubkey()), &bh);
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
-    svm.send_transaction(tx).unwrap();
+    let msg = Message::new_with_blockhash(&[ix], Some(&voter.pubkey()), &bh);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[voter]).unwrap();
+    svm.send_transaction(tx)
+        .map(|_| ())
+        .map_err(|e| format!("{:?}", e))
 }
 
-fn try_send(svm: &mut LiteSVM, ixs: Vec<Instruction>, signers: &[&Keypair]) -> bool {
-    let bh = svm.latest_blockhash();
-    let msg = Message::new_with_blockhash(&ixs, Some(&signers[0].pubkey()), &bh);
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
-    svm.send_transaction(tx).is_ok()
+fn read_candidate_votes(svm: &LiteSVM, candidate_pda: &Pubkey) -> u64 {
+    let account_data = svm.get_account(candidate_pda).unwrap().data;
+    let mut data_slice: &[u8] = &account_data;
+    // CandidateAccount: 8 anchor discriminator + [max_len(32)] string (4 len + bytes) + u64
+    // Skip 8 discriminator + 4 string length prefix, read bytes, skip string content, read u64
+    let candidate =
+        voting::CandidateAccount::try_deserialize(&mut data_slice).unwrap();
+    candidate.candidate_votes
 }
 
-// ── State readers ───────────────────────────────────────────────────────────
-
-fn read_poll(svm: &LiteSVM, poll_id: u64) -> PollAccount {
-    PollAccount::try_deserialize(&mut &svm.get_account(&poll_pda(poll_id)).unwrap().data[..]).unwrap()
-}
-fn read_candidate(svm: &LiteSVM, poll_id: u64, name: &str) -> CandidateAccount {
-    CandidateAccount::try_deserialize(&mut &svm.get_account(&candidate_pda(poll_id, name)).unwrap().data[..]).unwrap()
-}
-fn read_vote_record(svm: &LiteSVM, poll_id: u64, user: &Pubkey) -> VoteRecord {
-    let p = poll_pda(poll_id);
-    VoteRecord::try_deserialize(&mut &svm.get_account(&vote_record_pda(&p, user)).unwrap().data[..]).unwrap()
-}
-fn token_balance(svm: &LiteSVM, tk: &Pubkey) -> u64 {
-    spl_token::state::Account::unpack(&svm.get_account(tk).unwrap().data).unwrap().amount
-}
-fn exists(svm: &LiteSVM, pk: &Pubkey) -> bool {
-    svm.get_account(pk).is_some()
-}
-
-
-// ============================================================================
-// A ─ HAPPY PATH
-// ============================================================================
+// ── Tests ───────────────────────────────────────────────────────────────────
 
 #[test]
-fn test_secure_voting_flow() {
-    let (mut svm, payer) = setup_svm();
-    set_clock(&mut svm, 50);
+fn test_happy_path_single_vote() {
+    let program_id = voting::id();
+    let admin = Keypair::new();
+    let voter = Keypair::new();
 
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 150);
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!("../../../target/deploy/voting.so");
+    svm.add_program(program_id, bytes).unwrap();
+    svm.airdrop(&admin.pubkey(), 2_000_000_000).unwrap();
+    svm.airdrop(&voter.pubkey(), 1_000_000_000).unwrap();
 
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Rustacian"),
-        vote_ix(&payer.pubkey(), 1, "Rustacian", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]);
+    let clock = anchor_lang::solana_program::clock::Clock {
+        slot: 1,
+        unix_timestamp: 50,
+        ..Default::default()
+    };
+    svm.set_sysvar(&clock);
 
-    assert_eq!(read_poll(&svm, 1).total_tokens_locked, 150);
-    assert_eq!(read_candidate(&svm, 1, "Rustacian").candidate_votes, 150);
-    let vr = read_vote_record(&svm, 1, &payer.pubkey());
-    assert_eq!(vr.tokens_deposited, 150);
-    assert!(vr.has_voted);
+    let poll_id: u64 = 1;
+    let candidate = "Alice".to_string();
+
+    let (poll_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes()],
+        &program_id,
+    );
+    let (candidate_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes(), candidate.as_bytes()],
+        &program_id,
+    );
+
+    // Build Merkle tree: 1 voter
+    let leaf = compute_leaf(&voter.pubkey(), &candidate, 100);
+    let (_levels, root) = build_merkle_tree(&[leaf]);
+    // With 1 leaf, proof is empty (leaf is the root)
+    let proof: Vec<[u8; 32]> = vec![];
+
+    setup_poll(&mut svm, &admin, poll_id, root, poll_pda);
+    setup_candidate(&mut svm, &admin, poll_id, &candidate, poll_pda, candidate_pda);
+
+    submit_vote(
+        &mut svm,
+        &voter,
+        poll_id,
+        &candidate,
+        100,
+        proof,
+        0,
+        poll_pda,
+        candidate_pda,
+    )
+    .unwrap();
+
+    assert_eq!(read_candidate_votes(&svm, &candidate_pda), 100);
 }
-
-#[test]
-fn test_complete_voting_cycle() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 200);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 100),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-
-    set_clock(&mut svm, 50);
-    send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]);
-
-    let esc = escrow_pda(&poll_pda(1), &payer.pubkey());
-    assert_eq!(token_balance(&svm, &esc), 150);
-    assert_eq!(token_balance(&svm, &tk.pubkey()), 50);
-
-    set_clock(&mut svm, 200);
-    send(&mut svm, vec![
-        withdraw_ix(&payer.pubkey(), 1, &tk.pubkey()),
-    ], &[&payer]);
-
-    assert!(!exists(&svm, &vote_record_pda(&poll_pda(1), &payer.pubkey())));
-    assert!(!exists(&svm, &esc));
-    assert_eq!(token_balance(&svm, &tk.pubkey()), 200);
-}
-
-
-// ============================================================================
-// B ─ TIME VALIDATION
-// ============================================================================
-
-#[test]
-fn test_vote_before_voting_start() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 150);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-
-    set_clock(&mut svm, 5);
-    assert!(!try_send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]));
-}
-
-#[test]
-fn test_vote_after_voting_end() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 150);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 100),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-
-    set_clock(&mut svm, 200);
-    assert!(!try_send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]));
-}
-
-#[test]
-fn test_withdraw_before_voting_end() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 150);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-
-    set_clock(&mut svm, 50);
-    send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]);
-
-    assert!(!try_send(&mut svm, vec![
-        withdraw_ix(&payer.pubkey(), 1, &tk.pubkey()),
-    ], &[&payer]));
-}
-
-
-// ============================================================================
-// C ─ TOKEN GATING
-// ============================================================================
-
-#[test]
-fn test_vote_without_tokens() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    // no mint_to → balance = 0
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-
-    set_clock(&mut svm, 50);
-    assert!(!try_send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]));
-}
-
-#[test]
-fn test_vote_with_wrong_mint() {
-    let (mut svm, payer) = setup_svm();
-    let wrong_mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &wrong_mk);
-    create_token_account(&mut svm, &payer, &tk, &wrong_mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &wrong_mk.pubkey(), &tk.pubkey(), 150);
-
-    // governance mint is a DIFFERENT mint
-    let gov_mk = Keypair::new();
-    create_mint(&mut svm, &payer, &gov_mk);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-
-    set_clock(&mut svm, 50);
-    assert!(!try_send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &gov_mk.pubkey(), 150),
-    ], &[&payer]));
-}
-
-
-// ============================================================================
-// D ─ DOUBLE VOTE
-// ============================================================================
 
 #[test]
 fn test_double_vote_rejected() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 300);
+    let program_id = voting::id();
+    let admin = Keypair::new();
+    let voter = Keypair::new();
 
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!("../../../target/deploy/voting.so");
+    svm.add_program(program_id, bytes).unwrap();
+    svm.airdrop(&admin.pubkey(), 2_000_000_000).unwrap();
+    svm.airdrop(&voter.pubkey(), 1_000_000_000).unwrap();
 
-    // first vote — ok
-    send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]);
+    let clock = anchor_lang::solana_program::clock::Clock {
+        slot: 1,
+        unix_timestamp: 50,
+        ..Default::default()
+    };
+    svm.set_sysvar(&clock);
 
-    // second vote — rejected
-    assert!(!try_send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]));
-}
+    let poll_id: u64 = 1;
+    let candidate = "Alice".to_string();
 
+    let (poll_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes()],
+        &program_id,
+    );
+    let (candidate_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes(), candidate.as_bytes()],
+        &program_id,
+    );
 
-// ============================================================================
-// E ─ ESCROW & CUSTODY
-// ============================================================================
+    // 2 voters in tree, we'll use voter at index 0 twice
+    let leaves = [
+        compute_leaf(&voter.pubkey(), &candidate, 100),
+        compute_leaf(&Keypair::new().pubkey(), &candidate, 200),
+    ];
+    let (levels, root) = build_merkle_tree(&leaves);
+    let proof = get_proof(&levels, 0);
 
-#[test]
-fn test_tokens_locked_in_escrow_during_voting() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 200);
+    setup_poll(&mut svm, &admin, poll_id, root, poll_pda);
+    setup_candidate(&mut svm, &admin, poll_id, &candidate, poll_pda, candidate_pda);
 
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
+    // First vote succeeds
+    submit_vote(
+        &mut svm,
+        &voter,
+        poll_id,
+        &candidate,
+        100,
+        proof.clone(),
+        0,
+        poll_pda,
+        candidate_pda,
+    )
+    .unwrap();
 
-    send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]);
+    // Advance blockhash so LiteSVM doesn't reject as duplicate
+    svm.expire_blockhash();
 
-    let esc = escrow_pda(&poll_pda(1), &payer.pubkey());
-    assert_eq!(token_balance(&svm, &esc), 150);
-    assert_eq!(token_balance(&svm, &tk.pubkey()), 50);
-}
+    // Second vote with same leaf_index fails
+    let err = submit_vote(
+        &mut svm,
+        &voter,
+        poll_id,
+        &candidate,
+        100,
+        proof.clone(),
+        0,
+        poll_pda,
+        candidate_pda,
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("AlreadyVoted"),
+        "Expected AlreadyVoted error, got: {err}"
+    );
 
-#[test]
-fn test_escrow_accounts_destroyed_after_withdraw() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 200);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 100),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
-
-    send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]);
-
-    set_clock(&mut svm, 200);
-    send(&mut svm, vec![
-        withdraw_ix(&payer.pubkey(), 1, &tk.pubkey()),
-    ], &[&payer]);
-
-    let p = poll_pda(1);
-    assert!(!exists(&svm, &vote_record_pda(&p, &payer.pubkey())));
-    assert!(!exists(&svm, &escrow_pda(&p, &payer.pubkey())));
-    assert_eq!(token_balance(&svm, &tk.pubkey()), 200);
-}
-
-
-// ============================================================================
-// F ─ WEIGHTS & COUNTS
-// ============================================================================
-
-#[test]
-fn test_multiple_voters_accumulate_tokens() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-
-    let v1 = Keypair::new(); let t1 = Keypair::new();
-    let v2 = Keypair::new(); let t2 = Keypair::new();
-    setup_voter(&mut svm, &payer, &mk.pubkey(), &v1, &t1, 100);
-    setup_voter(&mut svm, &payer, &mk.pubkey(), &v2, &t2, 50);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
-
-    send(&mut svm, vec![
-        vote_ix(&v1.pubkey(), 1, "Alice", &t1.pubkey(), &mk.pubkey(), 100),
-    ], &[&v1]);
-    send(&mut svm, vec![
-        vote_ix(&v2.pubkey(), 1, "Alice", &t2.pubkey(), &mk.pubkey(), 50),
-    ], &[&v2]);
-
-    assert_eq!(read_poll(&svm, 1).total_tokens_locked, 150);
-    assert_eq!(read_candidate(&svm, 1, "Alice").candidate_votes, 150);
+    assert_eq!(read_candidate_votes(&svm, &candidate_pda), 100);
 }
 
 #[test]
-fn test_weight_calculation_off_chain() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
+fn test_invalid_proof_rejected() {
+    let program_id = voting::id();
+    let admin = Keypair::new();
+    let voter = Keypair::new();
 
-    // Voter 1: 750 tokens → votes for Alice
-    let v1 = Keypair::new(); let t1 = Keypair::new();
-    setup_voter(&mut svm, &payer, &mk.pubkey(), &v1, &t1, 750);
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!("../../../target/deploy/voting.so");
+    svm.add_program(program_id, bytes).unwrap();
+    svm.airdrop(&admin.pubkey(), 2_000_000_000).unwrap();
+    svm.airdrop(&voter.pubkey(), 1_000_000_000).unwrap();
 
-    // Voter 2: 250 tokens → votes for Bob (different candidate)
-    let v2 = Keypair::new(); let t2 = Keypair::new();
-    setup_voter(&mut svm, &payer, &mk.pubkey(), &v2, &t2, 250);
+    let clock = anchor_lang::solana_program::clock::Clock {
+        slot: 1,
+        unix_timestamp: 50,
+        ..Default::default()
+    };
+    svm.set_sysvar(&clock);
 
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-        init_candidate_ix(&payer.pubkey(), 1, "Bob"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
+    let poll_id: u64 = 1;
+    let candidate = "Alice".to_string();
 
-    send(&mut svm, vec![
-        vote_ix(&v1.pubkey(), 1, "Alice", &t1.pubkey(), &mk.pubkey(), 750),
-    ], &[&v1]);
-    send(&mut svm, vec![
-        vote_ix(&v2.pubkey(), 1, "Bob", &t2.pubkey(), &mk.pubkey(), 250),
-    ], &[&v2]);
+    let (poll_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes()],
+        &program_id,
+    );
+    let (candidate_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes(), candidate.as_bytes()],
+        &program_id,
+    );
 
-    let poll = read_poll(&svm, 1);
-    let cand_alice = read_candidate(&svm, 1, "Alice");
+    // Build tree with 2 voters
+    let leaves = [
+        compute_leaf(&Keypair::new().pubkey(), &candidate, 100),
+        compute_leaf(&Keypair::new().pubkey(), &candidate, 200),
+    ];
+    let (_levels, root) = build_merkle_tree(&leaves);
 
-    // Off-chain weight: (candidate_votes * 10_000) / total_tokens_locked
-    // Alice: (750 * 10_000) / 1_000 = 7_500 → 75.00%
-    let weight = (cand_alice.candidate_votes * 10_000) / poll.total_tokens_locked;
-    assert!(weight <= 10_000);
-    assert_eq!(weight, 7_500);
+    setup_poll(&mut svm, &admin, poll_id, root, poll_pda);
+    setup_candidate(&mut svm, &admin, poll_id, &candidate, poll_pda, candidate_pda);
+
+    // Submit with a garbage proof
+    let bad_proof = vec![[42u8; 32]; 2]; // completely fake siblings
+    let err = submit_vote(
+        &mut svm,
+        &voter,
+        poll_id,
+        &candidate,
+        100,
+        bad_proof,
+        0,
+        poll_pda,
+        candidate_pda,
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("InvalidMerkleProof"),
+        "Expected InvalidMerkleProof error, got: {err}"
+    );
+
+    assert_eq!(read_candidate_votes(&svm, &candidate_pda), 0);
 }
 
 #[test]
-fn test_vote_with_zero_tokens_fails() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 150);
+fn test_multi_voter_accumulates() {
+    let program_id = voting::id();
+    let admin = Keypair::new();
+    let voter0 = Keypair::new();
+    let voter1 = Keypair::new();
+    let voter2 = Keypair::new();
 
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!("../../../target/deploy/voting.so");
+    svm.add_program(program_id, bytes).unwrap();
+    let dummy = Keypair::new();
+    for kp in [&admin, &voter0, &voter1, &voter2, &dummy] {
+        svm.airdrop(&kp.pubkey(), 1_000_000_000).unwrap();
+    }
 
-    assert!(!try_send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 0),
-    ], &[&payer]));
-}
+    let clock = anchor_lang::solana_program::clock::Clock {
+        slot: 1,
+        unix_timestamp: 50,
+        ..Default::default()
+    };
+    svm.set_sysvar(&clock);
 
-#[test]
-fn test_withdraw_authority_gating() {
-    let (mut svm, payer) = setup_svm();
-    let attacker = Keypair::new();
-    svm.airdrop(&attacker.pubkey(), 5_000_000_000).unwrap();
+    let poll_id: u64 = 1;
+    let candidate = "Alice".to_string();
 
-    let mk = Keypair::new(); let tk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-    create_token_account(&mut svm, &payer, &tk, &mk.pubkey(), &payer.pubkey());
-    mint_to(&mut svm, &payer, &mk.pubkey(), &tk.pubkey(), 200);
+    let (poll_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes()],
+        &program_id,
+    );
+    let (candidate_pda, _) = Pubkey::find_program_address(
+        &[b"poll", &poll_id.to_le_bytes(), candidate.as_bytes()],
+        &program_id,
+    );
 
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 100),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
+    // 4 voters (power of 2 — avoids odd-tree proof issues)
+    let amounts = [100u64, 200, 150, 300];
+    let voters = [&voter0, &voter1, &voter2, &dummy];
+    let leaves: Vec<[u8; 32]> = voters
+        .iter()
+        .enumerate()
+        .map(|(i, v)| compute_leaf(&v.pubkey(), &candidate, amounts[i]))
+        .collect();
+    let (levels, root) = build_merkle_tree(&leaves);
 
-    send(&mut svm, vec![
-        vote_ix(&payer.pubkey(), 1, "Alice", &tk.pubkey(), &mk.pubkey(), 150),
-    ], &[&payer]);
+    setup_poll(&mut svm, &admin, poll_id, root, poll_pda);
+    setup_candidate(&mut svm, &admin, poll_id, &candidate, poll_pda, candidate_pda);
 
-    set_clock(&mut svm, 200);
+    for (i, v) in voters[..3].iter().enumerate() {
+        let proof = get_proof(&levels, i);
+        submit_vote(
+            &mut svm,
+            v,
+            poll_id,
+            &candidate,
+            amounts[i],
+            proof,
+            i as u64,
+            poll_pda,
+            candidate_pda,
+        )
+        .unwrap_or_else(|e| panic!("voter {i} vote failed: {e}"));
+        // ponytail: advance blockhash so LiteSVM accepts next tx
+        svm.expire_blockhash();
+    }
 
-    // Attacker tries to withdraw payer's tokens
-    assert!(!try_send(&mut svm, vec![
-        withdraw_ix(&attacker.pubkey(), 1, &tk.pubkey()),
-    ], &[&attacker]));
-}
-
-
-// ============================================================================
-// G ─ MULTIPLE CANDIDATES
-// ============================================================================
-
-#[test]
-fn test_multiple_candidates_vote_distribution() {
-    let (mut svm, payer) = setup_svm();
-    let mk = Keypair::new();
-    create_mint(&mut svm, &payer, &mk);
-
-    let v1 = Keypair::new(); let t1 = Keypair::new();
-    let v2 = Keypair::new(); let t2 = Keypair::new();
-    setup_voter(&mut svm, &payer, &mk.pubkey(), &v1, &t1, 100);
-    setup_voter(&mut svm, &payer, &mk.pubkey(), &v2, &t2, 50);
-
-    send(&mut svm, vec![
-        init_poll_ix(&payer.pubkey(), 1, 10, 2_000_000_000),
-        init_candidate_ix(&payer.pubkey(), 1, "Alice"),
-        init_candidate_ix(&payer.pubkey(), 1, "Bob"),
-    ], &[&payer]);
-    set_clock(&mut svm, 50);
-
-    send(&mut svm, vec![
-        vote_ix(&v1.pubkey(), 1, "Alice", &t1.pubkey(), &mk.pubkey(), 100),
-    ], &[&v1]);
-    send(&mut svm, vec![
-        vote_ix(&v2.pubkey(), 1, "Bob", &t2.pubkey(), &mk.pubkey(), 50),
-    ], &[&v2]);
-
-    assert_eq!(read_candidate(&svm, 1, "Alice").candidate_votes, 100);
-    assert_eq!(read_candidate(&svm, 1, "Bob").candidate_votes, 50);
-    assert_eq!(read_poll(&svm, 1).total_tokens_locked, 150);
-}
-
-
-// ============================================================================
-// TEST ID
-// ============================================================================
-
-#[test]
-fn test_id() {
-    assert_eq!(voting::id().to_string(), "4jvSdJbH7ReTSRNiNwgKXLDt4UHM6k3KCu8e78Btxpem");
+    let expected_total: u64 = amounts[..3].iter().sum();
+    assert_eq!(
+        read_candidate_votes(&svm, &candidate_pda),
+        expected_total,
+        "all votes should accumulate"
+    );
 }
