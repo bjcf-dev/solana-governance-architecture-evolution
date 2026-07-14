@@ -155,12 +155,15 @@ describe("usePolls", () => {
       },
     );
 
+    const decodeCallCount = { calls: 0 };
     mockDecode.mockImplementation((type: string, _data: unknown) => {
       if (type === "PollAccount") return createMockPollDecode();
       if (type === "CandidateAccount" && _data) {
-        // Alternate between Alice and Bob based on call order
+        decodeCallCount.calls++;
+        // Return Alice on first candidate call, Bob on second
+        const name = decodeCallCount.calls === 1 ? "Alice" : "Bob";
         return createMockCandidateDecode({
-          candidateName: "Alice",
+          candidateName: name,
           candidateVotes: BigInt(42),
         });
       }
@@ -176,10 +179,7 @@ describe("usePolls", () => {
 
     const cands = result.current.candidates.get(1);
     expect(cands).toBeDefined();
-
-    // decode is called multiple times: once for PollAccount, then per candidate
-    // A simpler check: the map is populated for poll 1
-    expect(cands!.length).toBeGreaterThanOrEqual(1);
+    expect(cands!.map((c) => c.name).sort()).toEqual(["Alice", "Bob"]);
   });
 
   it("skips candidates whose PDA has no account data", async () => {
@@ -266,7 +266,7 @@ describe("usePolls", () => {
 
     // The effect runs, fetch is called, but returns early because !program
     // No state changes happen — loading stays false
-    await vi.waitFor(() => {
+    await waitFor(() => {
       // fetch never called getAccountInfo or derivePollPda
       expect(mockGetAccountInfo).not.toHaveBeenCalled();
       expect(result.current.loading).toBe(false);

@@ -19,6 +19,15 @@ vi.mock("../utils/pda", () => ({
   deriveEscrowPda: vi.fn(),
 }));
 
+vi.mock("../utils/merkle", () => ({
+  buildTree: vi.fn(() => ({ root: new Uint8Array(32), leaves: [new Uint8Array(32)], layers: [] })),
+  getProof: vi.fn(() => ({ proof: [new Uint8Array(32)], leafIndex: 0 })),
+}));
+
+vi.mock("@noble/hashes/sha256", () => ({
+  sha256: vi.fn(() => new Uint8Array(32).fill(0xab)),
+}));
+
 import { useApp } from "../context/AppContext";
 import { useWallet } from "@solana/wallet-adapter-react";
 import {
@@ -261,6 +270,18 @@ describe("useVote", () => {
 
     // V3 does: amount ?? 1
     expect(voteChain.method).toHaveBeenCalledWith(1, "Alice", 1, expect.any(Array), 0);
+  });
+
+  it("vote with V3 auto-generates proof when not provided", async () => {
+    const { result } = renderHook(() => useVote("v3"));
+
+    await result.current.vote({ pollId: 1, candidate: "Alice" });
+
+    // Should auto-generate proof using buildTree/getProof mocks
+    const { buildTree, getProof } = await import("../utils/merkle");
+    expect(buildTree).toHaveBeenCalled();
+    expect(getProof).toHaveBeenCalled();
+    expect(voteChain.method).toHaveBeenCalledWith(1, "Alice", 1, expect.any(Array), expect.any(Number));
   });
 
   // ── Withdraw ────────────────────────────────────────────────────────────
