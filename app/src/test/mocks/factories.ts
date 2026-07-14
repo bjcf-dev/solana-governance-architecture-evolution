@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { PublicKey } from "@solana/web3.js";
 import type { VersionId } from "../../config/versions";
 import type { VersionConfig } from "../../config/versions";

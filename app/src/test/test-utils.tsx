@@ -1,8 +1,8 @@
-import { type FC, type ReactElement, type ReactNode, createContext, useContext, useState, useMemo } from "react";
+import { type FC, type ReactElement, type ReactNode, createContext, useState, useMemo } from "react";
 import { render, renderHook, type RenderOptions, type RenderHookOptions } from "@testing-library/react";
 import type { VersionId } from "../config/versions";
 import type { MockWallet, MockConnection, MockProgram } from "./mocks/factories";
-import { createMockWallet, createMockConnection, createMockProgram } from "./mocks/factories";
+import { createMockConnection, createMockProgram } from "./mocks/factories";
 
 // ── Test AppState context (lightweight replacement for AppContext) ────────────
 
