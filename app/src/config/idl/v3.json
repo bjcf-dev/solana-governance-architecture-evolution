@@ -9,11 +9,6 @@
   "instructions": [
     {
       "name": "close_poll",
-      "docs": [
-        "Sums Σ(weight_i), determines Approved vs Rejected, marks poll as closed.",
-        "If total_weight == 0 → Cancelled behavior (approved = false, no winner).",
-        "Emits PollClosed event (Criteria #2, #3, #5)."
-      ],
       "discriminator": [
         139,
         213,
@@ -146,7 +141,10 @@
     {
       "name": "vote",
       "docs": [
-        "Merkle-proof based vote. Verifies leaf membership, checks nullifier bitmask."
+        "Verifies that `leaf` is in the Merkle tree via `proof`,",
+        "ensures the voter hasn't voted before (nullifier bitmask),",
+        "and increments the candidate's vote count.",
+        "No VoteRecord is created — this is the scalability win."
       ],
       "discriminator": [
         227,
@@ -183,7 +181,7 @@
           "type": "u64"
         },
         {
-          "name": "_candidate",
+          "name": "candidate_name",
           "type": "string"
         },
         {
@@ -277,43 +275,28 @@
     },
     {
       "code": 6002,
-      "name": "VotingPeriodInactive",
-      "msg": "Voting period is inactive."
+      "name": "PollClosed",
+      "msg": "This poll is closed."
     },
     {
       "code": 6003,
-      "name": "NotTokenOwner",
-      "msg": "The wallet does not own the presented token account."
+      "name": "InvalidMerkleProof",
+      "msg": "Invalid Merkle proof."
     },
     {
       "code": 6004,
-      "name": "InvalidMint",
-      "msg": "The presented token does not belong to the official governance currency."
-    },
-    {
-      "code": 6005,
-      "name": "InsufficientTokens",
-      "msg": "Insufficient tokens to cast a vote."
-    },
-    {
-      "code": 6006,
-      "name": "WithdrawNotAllowed",
-      "msg": "Withdrawal is not allowed before voting has ended."
-    },
-    {
-      "code": 6007,
       "name": "AlreadyVoted",
       "msg": "This voter has already cast a vote for this poll."
     },
     {
-      "code": 6008,
-      "name": "PollAlreadyClosed",
-      "msg": "This poll has already been closed."
+      "code": 6005,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow."
     },
     {
-      "code": 6009,
-      "name": "NoCandidates",
-      "msg": "No candidates registered for this poll."
+      "code": 6006,
+      "name": "PollAlreadyClosed",
+      "msg": "This poll has already been closed."
     }
   ],
   "types": [
@@ -359,26 +342,6 @@
             "type": "u64"
           },
           {
-            "name": "total_tokens_locked",
-            "type": "u64"
-          },
-          {
-            "name": "candidates",
-            "type": "string"
-          },
-          {
-            "name": "closed",
-            "type": "bool"
-          },
-          {
-            "name": "approved",
-            "type": "bool"
-          },
-          {
-            "name": "total_weight",
-            "type": "u64"
-          },
-          {
             "name": "merkle_root",
             "type": {
               "array": [
@@ -386,16 +349,20 @@
                 32
               ]
             }
+          },
+          {
+            "name": "nullifier_bitmask",
+            "type": "bytes"
+          },
+          {
+            "name": "closed",
+            "type": "bool"
           }
         ]
       }
     },
     {
       "name": "PollClosed",
-      "docs": [
-        "Emitted when a poll is closed with weighted results.",
-        "Criterio #5: emits ProposalClosed-style event with result + total_weight."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -404,19 +371,7 @@
             "type": "u64"
           },
           {
-            "name": "result",
-            "type": "bool"
-          },
-          {
-            "name": "total_weight",
-            "type": "u64"
-          },
-          {
-            "name": "winner",
-            "type": "string"
-          },
-          {
-            "name": "candidate_total_weight",
+            "name": "total_votes",
             "type": "u64"
           }
         ]
@@ -424,10 +379,6 @@
     },
     {
       "name": "VoteCast",
-      "docs": [
-        "Emitted when a voter casts a weighted vote.",
-        "Criterios #1, #4: weight captured at vote time, dedup enforced."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -436,11 +387,15 @@
             "type": "pubkey"
           },
           {
-            "name": "candidate",
+            "name": "leaf_index",
+            "type": "u64"
+          },
+          {
+            "name": "candidate_name",
             "type": "string"
           },
           {
-            "name": "weight",
+            "name": "amount",
             "type": "u64"
           }
         ]

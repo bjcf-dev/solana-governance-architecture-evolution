@@ -27,7 +27,24 @@
         },
         {
           "name": "poll_account",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "poll_id"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -77,11 +94,40 @@
         },
         {
           "name": "poll_account",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "_poll_id"
+              }
+            ]
+          }
         },
         {
           "name": "candidate_account",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "arg",
+                "path": "_poll_id"
+              },
+              {
+                "kind": "arg",
+                "path": "candidate_name"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -101,9 +147,6 @@
     },
     {
       "name": "vote",
-      "docs": [
-        "Simple account-based vote. No token gating."
-      ],
       "discriminator": [
         227,
         110,
@@ -122,11 +165,40 @@
         },
         {
           "name": "poll_account",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "_poll_id"
+              }
+            ]
+          }
         },
         {
           "name": "candidate_account",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "arg",
+                "path": "_poll_id"
+              },
+              {
+                "kind": "arg",
+                "path": "_candidate"
+              }
+            ]
+          }
         },
         {
           "name": "vote_record",
@@ -140,12 +212,12 @@
                   111,
                   116,
                   101,
-                  100
+                  114
                 ]
               },
               {
-                "kind": "account",
-                "path": "poll_account"
+                "kind": "arg",
+                "path": "_poll_id"
               },
               {
                 "kind": "account",
@@ -227,41 +299,6 @@
       "code": 6002,
       "name": "VotingPeriodInactive",
       "msg": "Voting period is inactive."
-    },
-    {
-      "code": 6003,
-      "name": "NotTokenOwner",
-      "msg": "The wallet does not own the presented token account."
-    },
-    {
-      "code": 6004,
-      "name": "InvalidMint",
-      "msg": "The presented token does not belong to the official governance currency."
-    },
-    {
-      "code": 6005,
-      "name": "InsufficientTokens",
-      "msg": "Insufficient tokens to cast a vote."
-    },
-    {
-      "code": 6006,
-      "name": "WithdrawNotAllowed",
-      "msg": "Withdrawal is not allowed before voting has ended."
-    },
-    {
-      "code": 6007,
-      "name": "AlreadyVoted",
-      "msg": "This voter has already cast a vote for this poll."
-    },
-    {
-      "code": 6008,
-      "name": "PollAlreadyClosed",
-      "msg": "This poll has already been closed."
-    },
-    {
-      "code": 6009,
-      "name": "NoCandidates",
-      "msg": "No candidates registered for this poll."
     }
   ],
   "types": [
@@ -304,82 +341,6 @@
           },
           {
             "name": "option_index",
-            "type": "u64"
-          },
-          {
-            "name": "total_tokens_locked",
-            "type": "u64"
-          },
-          {
-            "name": "candidates",
-            "type": "string"
-          },
-          {
-            "name": "closed",
-            "type": "bool"
-          },
-          {
-            "name": "approved",
-            "type": "bool"
-          },
-          {
-            "name": "total_weight",
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "PollClosed",
-      "docs": [
-        "Emitted when a poll is closed with weighted results.",
-        "Criterio #5: emits ProposalClosed-style event with result + total_weight."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "id",
-            "type": "u64"
-          },
-          {
-            "name": "result",
-            "type": "bool"
-          },
-          {
-            "name": "total_weight",
-            "type": "u64"
-          },
-          {
-            "name": "winner",
-            "type": "string"
-          },
-          {
-            "name": "candidate_total_weight",
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "VoteCast",
-      "docs": [
-        "Emitted when a voter casts a weighted vote.",
-        "Criterios #1, #4: weight captured at vote time, dedup enforced."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "voter",
-            "type": "pubkey"
-          },
-          {
-            "name": "candidate",
-            "type": "string"
-          },
-          {
-            "name": "weight",
             "type": "u64"
           }
         ]

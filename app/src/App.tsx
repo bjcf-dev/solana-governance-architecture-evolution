@@ -1,11 +1,15 @@
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Header } from "./components/Header";
+import { PollList } from "./components/PollList";
+
 function App() {
+  const { connected } = useWallet();
+
   return (
     <div className="min-h-screen">
-      <header className="border-b bg-white px-6 py-4 shadow-sm">
-        <h1 className="text-xl font-semibold">Solana Governance</h1>
-      </header>
+      <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <p className="text-gray-500">Conectando wallet…</p>
+        {connected ? <PollList /> : <p className="text-gray-500">Connect your wallet to view polls.</p>}
       </main>
     </div>
   );
