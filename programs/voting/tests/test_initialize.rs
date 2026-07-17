@@ -47,7 +47,6 @@ fn get_proof(levels: &[Vec<[u8; 32]>], leaf_index: usize) -> Vec<[u8; 32]> {
             break;
         }
         let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
-        // ponytail: odd level, last node has no sibling — skip
         if sibling_idx < level.len() {
             proof.push(level[sibling_idx]);
         }
@@ -429,7 +428,6 @@ fn test_multi_voter_accumulates() {
             candidate_pda,
         )
         .unwrap_or_else(|e| panic!("voter {i} vote failed: {e}"));
-        // ponytail: advance blockhash so LiteSVM accepts next tx
         svm.expire_blockhash();
     }
 

@@ -80,7 +80,6 @@ pub mod voting {
     ) -> Result<()> {
         let poll = &mut ctx.accounts.poll_account;
 
-        // ponytail: time checks stay, same as V2
         let clock = Clock::get()?;
         let current_time = clock.unix_timestamp as u64;
         require!(
@@ -110,7 +109,6 @@ pub mod voting {
         let byte_pos = (leaf_index / 8) as usize;
         let bit_pos = (leaf_index % 8) as u8;
         if byte_pos >= poll.nullifier_bitmask.len() {
-            // ponytail: grow bitmask on first use
             let needed = byte_pos + 1;
             poll.nullifier_bitmask.resize(needed, 0);
         }
@@ -159,7 +157,6 @@ pub mod voting {
 
 /// Verifies that `leaf` is in a Merkle tree with the given `root`,
 /// using a proof of sibling hashes and the leaf's position index.
-/// ponytail: inline hash chain, no dependency.
 fn verify_merkle_proof(
     root: &[u8; 32],
     leaf: &[u8; 32],
