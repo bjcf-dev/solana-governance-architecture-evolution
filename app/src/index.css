@@ -1,3 +1,40 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --purple: #9945FF;
+  --purple-dark: #7A2FE0;
+  --purple-glow: rgba(153, 69, 255, 0.3);
+  --black: #0d0e14;
+  --black-2: #14151e;
+  --black-3: #1c1d2a;
+  --neon-green: #00ff9d;
+  --cyan: #00d4ff;
+  --white: #f0f0f5;
+  --gray: #8888a0;
+  --card-bg: rgba(20, 21, 30, 0.8);
+  --glass-border: rgba(153, 69, 255, 0.15);
+}
+
+@layer components {
+  .glass-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--glass-border);
+  }
+
+  .glass-card:hover {
+    border-color: rgba(153, 69, 255, 0.3);
+  }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out both;
+}
