@@ -3,6 +3,8 @@ import type { VersionId } from "../config/versions";
 import { getVersion } from "../config/versions";
 import { useApp } from "../context/AppContext";
 import { derivePollPda, deriveCandidatePda } from "../utils/pda";
+// ponytail: demo-polls — devnet preview only. Remove for mainnet.
+import { DEMO_POLLS } from "../data/demo-polls";
 
 export interface Poll {
   pollId: number;
@@ -22,7 +24,8 @@ export interface Candidate {
   votes: number;
 }
 
-const MAX_POLLS = 5;
+// ponytail: 50 is the original value. If devnet RPC rate-limits, reduce or use getProgramAccounts.
+const MAX_POLLS = 50;
 
 export function usePolls(versionId?: VersionId) {
   const { version: ctxVersion, programs, connection } = useApp();
@@ -43,7 +46,6 @@ export function usePolls(versionId?: VersionId) {
     try {
         for (let id = 1; id <= MAX_POLLS; id++) {
           const [pollPda] = derivePollPda(config.programId, id);
-          console.log(`Checking poll PDA for ID ${id}: ${pollPda.toBase58()}`);
           const accountInfo = await connection.getAccountInfo(pollPda);
           if (!accountInfo) continue;
 
@@ -85,7 +87,14 @@ export function usePolls(versionId?: VersionId) {
         }
         if (cands.length > 0) candMap.set(id, cands);
       }
+    } catch (err) {
+      console.warn("Failed to fetch on-chain polls, falling back to demo data:", err);
     } finally {
+      // ponytail: fallback to demo polls when on-chain has nothing (devnet preview).
+      // For mainnet, remove this fallback or wire to actual mainnet program.
+      if (pollList.length === 0 && DEMO_POLLS[version]) {
+        pollList.push(...DEMO_POLLS[version]);
+      }
       setPolls(pollList);
       setCandidates(candMap);
       setLoading(false);
