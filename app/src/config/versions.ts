@@ -17,7 +17,7 @@ export interface VersionConfig {
 export const CLUSTER_URL = "https://api.devnet.solana.com";
 
 export const PROGRAM_IDS: Record<VersionId, string> = {
-  v1: "DYDWxZMnCNYMKHAbhrQreo69kzCNpUrksAKNKyLDyPHY",
+  v1: "3ZymoFt5iejQYVLnxvpU4pd3ekexHXkcrBiypRvqarU3",
   v2: "4jvSdJbH7ReTSRNiNwgKXLDt4UHM6k3KCu8e78Btxpem",
   v3: "e956D3re1SUEx68mDUdzxujGBhfoXZBEBC75HKigEod",
 };
