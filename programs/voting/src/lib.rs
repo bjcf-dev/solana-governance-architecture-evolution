@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 // Declare the program ID for the voting program. 
 // This is a unique identifier for the program on the Solana blockchain. 
 // And it is used to ensure that the program is correctly identified when it is called by clients or other programs.
-declare_id!("DYDWxZMnCNYMKHAbhrQreo69kzCNpUrksAKNKyLDyPHY");
+declare_id!("4jvSdJbH7ReTSRNiNwgKXLDt4UHM6k3KCu8e78Btxpem");
 
 // This module/macro contains the logic for initializing the voting session.
 // It is defined in a separate file for better organization. 
