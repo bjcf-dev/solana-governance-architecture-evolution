@@ -1,6 +1,5 @@
 import { sha256 } from "@noble/hashes/sha256";
 
-// ponytail: tree fits in memory for ~1000 leaves (V3 spec limit)
 // If larger trees are needed, move computation to a Web Worker.
 
 export interface MerkleTree {
@@ -40,7 +39,6 @@ export function buildTree(leaves: Uint8Array[]): MerkleTree {
     const next: Uint8Array[] = [];
     for (let i = 0; i < current.length; i += 2) {
       const left = current[i];
-      const right = current[i + 1] ?? left; // ponytail: shouldn't hit this w/ padding, but guard
 
       const combined = new Uint8Array(64);
       combined.set(left);

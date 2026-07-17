@@ -1,7 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import type { VersionConfig } from "../config/versions";
 
-// ponytail: seed serialization helpers — keeps derivations concise
 function u64ToBytes(value: number | bigint): Uint8Array {
   const buf = new Uint8Array(8);
   const big = BigInt(value);

@@ -1,9 +1,6 @@
 import type { Poll } from "../hooks/usePolls";
 
-// ponytail-mode: demo polls per protocol version.
-// Used as fallback when on-chain has no data (devnet preview, no-deployed programs).
-// Devnet → mainnet = 1-line change in versions.ts (CLUSTER_URL).
-
+// Demo polls per protocol version — devnet preview fallback.
 export const DEMO_POLLS: Record<string, Poll[]> = {
   v1: [
     {

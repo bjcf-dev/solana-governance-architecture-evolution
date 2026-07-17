@@ -22,7 +22,6 @@ const AppContext = createContext<AppState | null>(null);
 
 const IDLS: Record<VersionId, unknown> = { v1: v1Idl, v2: v2Idl, v3: v3Idl };
 
-// ponytail: single connection shared across versions
 const connection = new Connection(CLUSTER_URL, "confirmed");
 
 export const AppContextProvider: FC<{ children: ReactNode }> = ({ children }) => {
@@ -39,7 +38,6 @@ export const AppContextProvider: FC<{ children: ReactNode }> = ({ children }) =>
       p[v] = new Program(IDLS[v], {
         connection,
         publicKey: wallet.publicKey,
-        // ponytail: signTransaction/signAllTransactions from wallet — null means
         // read-only; write instructions need a signer attached at call site.
       });
     }

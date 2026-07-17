@@ -8,7 +8,6 @@ import {
 } from "@solana/wallet-adapter-wallets";
 import { CLUSTER_URL } from "../config/versions";
 
-// ponytail: three wallets covers 99% of users; add more when someone asks
 export const WalletContextProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const wallets = useMemo(
     () => [new PhantomWalletAdapter(), new SolflareWalletAdapter(), new CoinbaseWalletAdapter()],

@@ -13,7 +13,6 @@ import { buildTree, getProof } from "../utils/merkle";
 import { sha256 } from "@noble/hashes/sha256";
 import type { VersionId } from "../config/versions";
 
-// ponytail: hardcoded for devnet; make configurable for mainnet
 const GOVERNANCE_MINT = new PublicKey("F9G7jZqJiLkqNojyo1gFjz6Kxg9GzKEGjFyQp7LxPump");
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");

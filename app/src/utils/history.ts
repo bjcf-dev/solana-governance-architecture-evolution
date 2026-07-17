@@ -25,7 +25,6 @@ function readAll(): VoteRecord[] {
     if (!raw) return [];
     return JSON.parse(raw) as VoteRecord[];
   } catch {
-    // ponytail: quota exceeded or corrupt data — start fresh
     return [];
   }
 }
@@ -34,7 +33,6 @@ function writeAll(records: VoteRecord[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   } catch {
-    // ponytail: quota exceeded — silently ignore, vote is already confirmed
   }
 }
 

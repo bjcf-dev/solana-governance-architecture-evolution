@@ -13,7 +13,6 @@ export interface VersionConfig {
   };
 }
 
-// ponytail: hardcoded devnet endpoint; mainnet = 1-line change in clusterUrl
 export const CLUSTER_URL = "https://api.devnet.solana.com";
 
 export const PROGRAM_IDS: Record<VersionId, string> = {

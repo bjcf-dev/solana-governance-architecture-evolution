@@ -3,7 +3,6 @@ import type { VersionId } from "../config/versions";
 import { getVersion } from "../config/versions";
 import { useApp } from "../context/AppContext";
 import { derivePollPda, deriveCandidatePda } from "../utils/pda";
-// ponytail: demo-polls — devnet preview only. Remove for mainnet.
 import { DEMO_POLLS } from "../data/demo-polls";
 
 export interface Poll {
@@ -24,7 +23,6 @@ export interface Candidate {
   votes: number;
 }
 
-// ponytail: 50 is the original value. If devnet RPC rate-limits, reduce or use getProgramAccounts.
 const MAX_POLLS = 50;
 
 export function usePolls(versionId?: VersionId) {
@@ -90,8 +88,6 @@ export function usePolls(versionId?: VersionId) {
     } catch (err) {
       console.warn("Failed to fetch on-chain polls, falling back to demo data:", err);
     } finally {
-      // ponytail: fallback to demo polls when on-chain has nothing (devnet preview).
-      // For mainnet, remove this fallback or wire to actual mainnet program.
       if (pollList.length === 0 && DEMO_POLLS[version]) {
         pollList.push(...DEMO_POLLS[version]);
       }
