@@ -15,6 +15,10 @@ vi.mock("../utils/pda", () => ({
   deriveCandidatePda: vi.fn(),
 }));
 
+vi.mock("../data/demo-polls", () => ({
+  DEMO_POLLS: {},
+}));
+
 import { useApp } from "../context/AppContext";
 import { derivePollPda, deriveCandidatePda } from "../utils/pda";
 

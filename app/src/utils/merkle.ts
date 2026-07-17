@@ -39,7 +39,7 @@ export function buildTree(leaves: Uint8Array[]): MerkleTree {
     const next: Uint8Array[] = [];
     for (let i = 0; i < current.length; i += 2) {
       const left = current[i];
-
+      const right = current[i + 1] ?? left;
       const combined = new Uint8Array(64);
       combined.set(left);
       combined.set(right, 32);

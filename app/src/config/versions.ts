@@ -17,8 +17,8 @@ export const CLUSTER_URL = "https://api.devnet.solana.com";
 
 export const PROGRAM_IDS: Record<VersionId, string> = {
   v1: "3ZymoFt5iejQYVLnxvpU4pd3ekexHXkcrBiypRvqarU3",
-  v2: "4jvSdJbH7ReTSRNiNwgKXLDt4UHM6k3KCu8e78Btxpem",
-  v3: "e956D3re1SUEx68mDUdzxujGBhfoXZBEBC75HKigEod",
+  v2: "8bhUbJHr9AxmgQLkMJJspREZLXGg8W4VvZqffpCERvJ5",
+  v3: "EwNxa8wzHChRJsoRnxE9EKAiHgzFS3kKzKvaWG4Rjf3a",
 };
 
 export const VERSIONS: VersionConfig[] = [
