@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
 
-declare_id!("e956D3re1SUEx68mDUdzxujGBhfoXZBEBC75HKigEod");
+declare_id!("EwNxa8wzHChRJsoRnxE9EKAiHgzFS3kKzKvaWG4Rjf3a");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EVENTS
