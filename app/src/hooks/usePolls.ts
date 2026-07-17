@@ -22,7 +22,7 @@ export interface Candidate {
   votes: number;
 }
 
-const MAX_POLLS = 50;
+const MAX_POLLS = 5;
 
 export function usePolls(versionId?: VersionId) {
   const { version: ctxVersion, programs, connection } = useApp();
@@ -41,10 +41,11 @@ export function usePolls(versionId?: VersionId) {
     const candMap = new Map<number, Candidate[]>();
 
     try {
-      for (let id = 1; id <= MAX_POLLS; id++) {
-        const [pollPda] = derivePollPda(config.programId, id);
-        const accountInfo = await connection.getAccountInfo(pollPda);
-        if (!accountInfo) continue;
+        for (let id = 1; id <= MAX_POLLS; id++) {
+          const [pollPda] = derivePollPda(config.programId, id);
+          console.log(`Checking poll PDA for ID ${id}: ${pollPda.toBase58()}`);
+          const accountInfo = await connection.getAccountInfo(pollPda);
+          if (!accountInfo) continue;
 
         const decoded = program.coder.accounts.decode("PollAccount", accountInfo.data) as Record<string, unknown>;
 
