@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solana Governance DApp — Visual Identity & Design</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --purple:#9945FF;
+  --purple-dark:#7A2FE0;
+  --purple-glow:rgba(153,69,255,0.3);
+  --black:#0D0E14;
+  --black-2:#14151E;
+  --black-3:#1C1D2A;
+  --neon-green:#00FF9D;
+  --cyan:#00D4FF;
+  --white:#F0F0F5;
+  --gray:#8888A0;
+  --card-bg:rgba(20,21,30,0.8);
+  --glass-border:rgba(153,69,255,0.15);
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Inter',sans-serif;
+  background:var(--black);
+  color:var(--white);
+  overflow:hidden;
+  height:100vh;
+}
+.slides{height:100vh;display:flex;transition:transform 0.6s cubic-bezier(0.23,1,0.32,1)}
+.slide{
+  min-width:100vw;height:100vh;
+  display:flex;flex-direction:column;
+  justify-content:center;align-items:center;
+  padding:4rem;position:relative;
+  overflow:hidden;
+}
+.slide::before{
+  content:'';position:absolute;top:-50%;left:-50%;
+  width:200%;height:200%;
+  background:radial-gradient(ellipse at 30% 20%,rgba(153,69,255,0.08),transparent 60%);
+  pointer-events:none;
+}
+/* Navigation */
+.nav{
+  position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);
+  display:flex;gap:0.75rem;z-index:100;
+  background:rgba(13,14,20,0.8);padding:0.75rem 1.5rem;
+  border-radius:2rem;border:1px solid var(--glass-border);
+  backdrop-filter:blur(12px);
+}
+.nav button{
+  width:10px;height:10px;border-radius:50%;
+  border:2px solid var(--gray);background:transparent;
+  cursor:pointer;transition:all 0.3s;
+}
+.nav button.active{border-color:var(--purple);background:var(--purple);box-shadow:0 0 12px var(--purple-glow)}
+.nav button:hover{border-color:var(--cyan)}
+
+/* Slide 1: Cover */
+.cover{text-align:center}
+.cover .badge{
+  display:inline-block;padding:0.4rem 1.2rem;
+  border:1px solid var(--purple);border-radius:2rem;
+  font-size:0.85rem;color:var(--purple);
+  letter-spacing:0.1em;text-transform:uppercase;
+  margin-bottom:2rem;font-family:'JetBrains Mono',monospace;
+}
+.cover h1{
+  font-size:3.5rem;font-weight:700;
+  background:linear-gradient(135deg,var(--white),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:1rem;
+}
+.cover .subtitle{
+  font-size:1.3rem;color:var(--gray);
+  font-weight:300;margin-bottom:3rem;
+}
+.cover .tagline{
+  display:flex;gap:2rem;font-size:0.9rem;
+}
+.cover .tagline span{
+  padding:0.5rem 1rem;
+  border:1px solid var(--glass-border);
+  border-radius:0.5rem;color:var(--gray);
+}
+.glow-orb{
+  position:absolute;width:300px;height:300px;
+  border-radius:50%;filter:blur(80px);
+  pointer-events:none;opacity:0.3;
+}
+.orb-1{top:-100px;right:-80px;background:var(--purple)}
+.orb-2{bottom:-120px;left:-60px;background:var(--cyan)}
+
+/* Slide 2: Problem */
+.problem{text-align:center}
+.problem h2{font-size:2.5rem;margin-bottom:1.5rem}
+.problem h2 span{color:var(--purple)}
+.problem-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;max-width:700px;margin-top:2rem}
+.problem-card{
+  padding:1.5rem;border-radius:1rem;
+  background:var(--card-bg);border:1px solid var(--glass-border);
+  backdrop-filter:blur(8px);text-align:left;
+}
+.problem-card .icon{font-size:1.5rem;margin-bottom:0.5rem}
+.problem-card h3{font-size:1rem;margin-bottom:0.3rem;color:var(--purple)}
+.problem-card p{font-size:0.85rem;color:var(--gray);line-height:1.5}
+
+/* Slide 3: Style */
+.style{text-align:center}
+.style h2{font-size:2.5rem;margin-bottom:0.5rem}
+.style h2 span{color:var(--purple)}
+.style .intro{color:var(--gray);margin-bottom:2.5rem}
+.style-showcase{display:flex;gap:2rem;justify-content:center;flex-wrap:wrap}
+.color-swatch{width:100px;height:100px;border-radius:1rem;position:relative;display:flex;align-items:flex-end;padding:0.5rem;font-size:0.7rem;font-family:'JetBrains Mono',monospace;border:1px solid rgba(255,255,255,0.1)}
+.color-swatch .label{background:rgba(0,0,0,0.6);padding:0.2rem 0.4rem;border-radius:0.3rem;width:100%;text-align:center}
+.swatch-purple{background:#9945FF}
+.swatch-black{background:#0D0E14;border-color:rgba(255,255,255,0.15)}
+.swatch-green{background:#00FF9D}
+.swatch-cyan{background:#00D4FF}
+.typography-demo{margin-top:2rem;display:flex;gap:3rem;justify-content:center}
+.typo-item{text-align:left}
+.typo-item .sample{font-size:1.8rem;font-weight:700}
+.typo-item .sample.mono{font-family:'JetBrains Mono',monospace}
+.typo-item .name{font-size:0.75rem;color:var(--gray);margin-top:0.3rem}
+
+/* Slide 4: Pages */
+.pages{text-align:center}
+.pages h2{font-size:2.5rem;margin-bottom:0.5rem}
+.pages h2 span{color:var(--purple)}
+.pages .intro{color:var(--gray);margin-bottom:2.5rem}
+.mockup-grid{display:grid;grid-template-columns:1fr 1fr;gap:2rem;max-width:800px}
+.mockup{
+  background:var(--card-bg);border:1px solid var(--glass-border);
+  border-radius:1rem;padding:1.5rem;backdrop-filter:blur(8px);
+  text-align:left;min-height:180px;position:relative;
+  display:flex;flex-direction:column;gap:0.5rem;
+}
+.mockup .mock-label{
+  font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;
+  color:var(--purple);font-family:'JetBrains Mono',monospace;
+}
+.mockup .mock-title{font-size:1.1rem;font-weight:600}
+.mockup .mock-body{font-size:0.8rem;color:var(--gray);flex:1}
+.mock-button{
+  display:inline-block;padding:0.5rem 1rem;
+  background:var(--purple);color:var(--white);
+  border-radius:0.5rem;font-size:0.8rem;font-weight:600;
+  border:none;cursor:pointer;align-self:flex-start;
+}
+.mock-button.outline{
+  background:transparent;border:1px solid var(--purple);
+  color:var(--purple);
+}
+.wallet-badge{
+  display:inline-flex;align-items:center;gap:0.5rem;
+  padding:0.3rem 0.8rem;background:rgba(0,255,157,0.1);
+  border:1px solid var(--neon-green);border-radius:2rem;
+  font-size:0.7rem;color:var(--neon-green);
+  font-family:'JetBrains Mono',monospace;align-self:flex-start;
+}
+.dot-active,.dot-closed{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:0.4rem}
+.dot-active{background:var(--neon-green);box-shadow:0 0 8px var(--neon-green)}
+.dot-closed{background:var(--gray)}
+
+/* Slide 5: Next */
+.next{text-align:center}
+.next h2{font-size:2.5rem;margin-bottom:1rem}
+.next h2 span{color:var(--purple)}
+.next p{color:var(--gray);max-width:500px;margin-bottom:2rem;line-height:1.6}
+.next-steps{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+.next-step{
+  padding:1rem 2rem;border-radius:1rem;
+  background:var(--card-bg);border:1px solid var(--glass-border);
+  backdrop-filter:blur(8px);min-width:180px;
+}
+.next-step .step-num{
+  font-size:0.7rem;color:var(--purple);
+  font-family:'JetBrains Mono',monospace;margin-bottom:0.3rem;
+}
+.next-step .step-title{font-weight:600;font-size:1rem}
+.next-step .step-desc{font-size:0.8rem;color:var(--gray);margin-top:0.3rem}
+/* Arrows hint */
+.hint{
+  position:fixed;bottom:5rem;left:50%;transform:translateX(-50%);
+  font-size:0.75rem;color:var(--gray);z-index:100;
+  opacity:0.6;animation:fadeInOut 2s ease-in-out infinite;
+  font-family:'JetBrains Mono',monospace;
+}
+@keyframes fadeInOut{0%,100%{opacity:0.3}50%{opacity:0.8}}
+</style>
+</head>
+<body>
+<div class="slides" id="slides">
+  <!-- Slide 1: Cover -->
+  <div class="slide cover">
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+    <div class="badge">Design System · 2026</div>
+    <h1>Solana Governance DApp</h1>
+    <p class="subtitle">Visual Identity &amp; Design Concept</p>
+    <div class="tagline">
+      <span>✦ DAO Members</span>
+      <span>✦ Token Holders</span>
+      <span>✦ Crypto Native</span>
+    </div>
+  </div>
+
+  <!-- Slide 2: Problem & Approach -->
+  <div class="slide problem">
+    <h2>Why <span>Visual Identity</span> Matters</h2>
+    <p style="color:var(--gray);max-width:600px;line-height:1.6">
+      A governance dApp is trust infrastructure. Every pixel either builds confidence or erodes it.
+    </p>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="icon">🔮</div>
+        <h3>Trust at First Sight</h3>
+        <p>Professional design signals that the protocol is reliable and the team invested in quality.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon">🧭</div>
+        <h3>Clear Navigation</h3>
+        <p>Voters need to find active polls, review proposals, and cast votes without friction.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon">⚡</div>
+        <h3>Solana Native Feel</h3>
+        <p>The UI should feel at home in the ecosystem — fast, dark, and technologically forward.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon">🛡️</div>
+        <h3>Wallet Confidence</h3>
+        <p>Clear wallet states (disconnected, connected, signing) prevent costly mistakes.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 3: Style Direction -->
+  <div class="slide style">
+    <h2><span>Solana Native</span> Palette</h2>
+    <p class="intro">Dark theme · Neon accents · Glassmorphism · Clean typography</p>
+    <div class="style-showcase">
+      <div class="color-swatch swatch-purple"><span class="label">#9945FF</span></div>
+      <div class="color-swatch swatch-black"><span class="label">#0D0E14</span></div>
+      <div class="color-swatch swatch-green"><span class="label">#00FF9D</span></div>
+      <div class="color-swatch swatch-cyan"><span class="label">#00D4FF</span></div>
+    </div>
+    <div class="typography-demo">
+      <div class="typo-item">
+        <div class="sample">Inter</div>
+        <div class="name">Sans-serif · Headings &amp; Body</div>
+      </div>
+      <div class="typo-item">
+        <div class="sample mono">JetBrains Mono</div>
+        <div class="name">Monospace · Code &amp; Addresses</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 4: Page Concepts -->
+  <div class="slide pages">
+    <h2><span>Page</span> Concepts</h2>
+    <p class="intro">Landing page + Dashboard — wallet connect mock states included</p>
+    <div class="mockup-grid">
+      <div class="mockup">
+        <span class="mock-label">Landing · Hero</span>
+        <span class="mock-title">Govern the Future</span>
+        <div class="mock-body">Participate in on-chain governance. Propose, vote, and shape the protocol.</div>
+        <button class="mock-button">Connect Wallet</button>
+      </div>
+      <div class="mockup">
+        <span class="mock-label">Landing · Connected</span>
+        <span class="mock-title">Govern the Future</span>
+        <div class="mock-body">Welcome back. Your voting power is ready.</div>
+        <div class="wallet-badge">● 7v9y...3kD1 · 2,450 SOL</div>
+      </div>
+      <div class="mockup">
+        <span class="mock-label">Dashboard</span>
+        <span class="mock-title">Active Polls</span>
+        <div class="mock-body"><span class="dot-active"></span>Treasury Allocation Q3 <span style="color:var(--gray);float:right">12h left</span></div>
+        <div class="mock-body"><span class="dot-active"></span>Validator Incentives <span style="color:var(--gray);float:right">3d left</span></div>
+        <div class="mock-body" style="margin-top:0.5rem;font-size:0.75rem;color:var(--gray)">
+          <span class="dot-closed"></span>Protocol Upgrade v2 <span style="color:var(--gray);float:right">Closed</span>
+        </div>
+        <button class="mock-button outline">View All →</button>
+      </div>
+      <div class="mockup">
+        <span class="mock-label">Dashboard</span>
+        <span class="mock-title">My Votes</span>
+        <div class="mock-body">Proposals you've participated in, with your voting history and reward status.</div>
+        <button class="mock-button outline" style="background:transparent;border:1px solid var(--cyan);color:var(--cyan)">History →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 5: Next Steps -->
+  <div class="slide next">
+    <h2><span>Next</span> Steps</h2>
+    <p>From visual concept to interactive prototype — the design system comes to life in the next phase.</p>
+    <div class="next-steps">
+      <div class="next-step">
+        <div class="step-num">01</div>
+        <div class="step-title">Prototype</div>
+        <div class="step-desc">Interactive HTML/CSS prototype with real navigation</div>
+      </div>
+      <div class="next-step">
+        <div class="step-num">02</div>
+        <div class="step-title">Refine</div>
+        <div class="step-desc">Iterate on feedback from stakeholders</div>
+      </div>
+      <div class="next-step">
+        <div class="step-num">03</div>
+        <div class="step-title">Implement</div>
+        <div class="step-desc">Translate design into production components</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nav" id="nav"></div>
+<div class="hint">←  →  navigate</div>
+
+<script>
+const slides = document.getElementById('slides');
+const total = document.querySelectorAll('.slide').length;
+let current = 0;
+
+// Build nav dots
+const nav = document.getElementById('nav');
+for(let i=0;i<total;i++){
+  const dot = document.createElement('button');
+  dot.dataset.i=i;
+  if(i===0) dot.className='active';
+  dot.addEventListener('click',()=>go(i));
+  nav.appendChild(dot);
+}
+
+function go(i){
+  if(i<0||i>=total) return;
+  current=i;
+  slides.style.transform=`translateX(-${current*100}vw)`;
+  document.querySelectorAll('.nav button').forEach((d,j)=>d.className=j===current?'active':'');
+}
+// Keyboard
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='ArrowDown') go(current+1);
+  if(e.key==='ArrowLeft'||e.key==='ArrowUp') go(current-1);
+});
+// Touch
+let touchX=0;
+document.addEventListener('touchstart',e=>touchX=e.changedTouches[0].screenX);
+document.addEventListener('touchend',e=>{
+  const diff=touchX-e.changedTouches[0].screenX;
+  if(Math.abs(diff)>50) go(current+(diff>0?1:-1));
+});
+</script>
+</body>
+</html>
